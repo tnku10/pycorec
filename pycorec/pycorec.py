@@ -70,8 +70,16 @@ def getdir():
         j = -1
         cv2.destroyAllWindows()
 
-    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
+    # cm/pxの値受け取り
     scale = scaletxtbox.get()
+    # 表示倍率による変化を適用
+    if scale == '':
+        jmax = max(jcheck)
+        for j in range(0, jmax+1):
+            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
+            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
+
+    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
     if not scale == '':
         scale = float(scale)
         jmax = max(jcheck)
@@ -145,8 +153,16 @@ def getrange():
         j = -1
         cv2.destroyAllWindows()
 
-    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
+    # cm/pxの値受け取り
     scale = scaletxtbox.get()
+    # 表示倍率による変化を適用
+    if scale == '':
+        jmax = max(jcheck)
+        for j in range(0, jmax + 1):
+            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
+            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
+
+    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
     if not scale == '':
         scale = float(scale)
         jmax = max(jcheck)
@@ -206,14 +222,22 @@ def getfile():
         j = -1
         cv2.destroyAllWindows()
 
-    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
+    # cm/pxの値受け取り
     scale = scaletxtbox.get()
+    # 表示倍率による変化を適用
+    if scale == '':
+        jmax = max(jcheck)
+        for j in range(0, jmax + 1):
+            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
+            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
+
+    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
     if not scale == '':
         scale = float(scale)
         jmax = max(jcheck)
         for j in range(0, jmax + 1):
-            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale
-            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale
+            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale / magnification
+            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale / magnification
     # 実行時刻の記録
     now = datetime.datetime.now()
     current_time = now.strftime('%Y-%m-%d-%H-%M')
