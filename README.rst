@@ -105,8 +105,6 @@ Future update
 
 Credits
 -------
-| 管理者:北海道大学大学院水産科学研究院 海洋生物資源科学部門 水産工学分野・大学院環境科学院 生物圏科学専攻 海洋生物生産学コース 髙木力研究室
-| 開発者:北海道大学大学院水産科学院 田中優斗
 | Managed by TAKAGI Tsutomu's laboratory (Faculty of Fisheries Sciences, Hokkaido Univ.)
 | Programmed by TANAKA Yuto (Graduate school of Fisheries Sciences, Hokkaido Univ.)
 | 開発環境
