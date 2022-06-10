@@ -1,4 +1,5 @@
 # 連番画像ピクセル座標取得プログラム(pycorec)
+
 # ライブラリのインポート (system-included)
 import datetime
 from pathlib import Path
