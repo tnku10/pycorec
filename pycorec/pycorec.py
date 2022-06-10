@@ -13,315 +13,183 @@ import numpy as np  # pip install numpy
 import pandas as pd  # pip install pandas
 
 
-# 画像の選択と表示(読込画像フォルダ選択(一括選択)モード)
-def getdir():
-    global i
-    global j
-    global df
-    global img2
-    global file_name_
-    # 連番画像のフォルダを指定
-    dir_path = tk.filedialog.askdirectory(title='画像フォルダ選択')
-    # 連番画像のファイルリストを作成
-    path = Path(dir_path)
-    all_files = natsorted([p for p in path.glob('**/*')
-                           if not re.search('Bkg', str(p)) and re.search('/*\.(jpg|jpeg|png|tif|bmp)', str(p))])
-    # インターバルに応じてファイルリストを修正
-    interval = int(intervaltxtbox.get())
-    all_files = all_files[::interval]
-    # 座標記録用に空のデータフレームを作成
-    df = pd.DataFrame(index=range(len(all_files)))
-    # 相対時刻の列を作成(fpsが入力されたときのみ動作)
-    fps = fpstxtbox.get()
-    if not fps == '':
-        fps = int(fps)
-        spf = 1 / fps
-        timestep = interval * spf
-        end = 0 + (len(all_files) - 1) * timestep
-        sec = np.linspace(0, end, num=len(all_files))
-        df['file name'] = ''
-        df['Time(s)'] = sec
-    # 物理座標用j記録
-    jcheck = []
-    # 画像ごとのクリック回数記録用
-    j = -1
-    # 入力された表示画像倍率を読み込む
-    magnification = float(pictxtbox.get())
-    # 1枚ずつ表示する
-    for i, file_path_ in enumerate(all_files):
-        file_name_ = Path(file_path_).stem
-        file_path_ = str(file_path_)
-        df.at[df.index[i], 'file name'] = file_name_
-        # 画像の読み込み
-        # OpenCVは日本語パス名非対応なためimreadでは日本語含まれると読み込めない
-        # NumPyで画像ファイルを開き，OpenCV(Numpyのndarray)に変換して読み込む
-        buf = np.fromfile(file_path_, np.uint8)
-        img = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
-        # アスペクト比を固定して画像を変換
-        img2 = cv2.resize(img, dsize=None, fx=magnification, fy=magnification)
-        # 画像の表示
-        cv2.imshow(file_name_, img2)
-        # cv2.resizeWindow(file_name_, 960, 732)  # ウィンドウサイズ
-        cv2.moveWindow(file_name_, 300, 0)  # ウィンドウ表示位置指定
-        cv2.setMouseCallback(file_name_, coordinates)
-        cv2.waitKey(0)
-        if i > 0:
-            while pd.isna(df.at[df.index[i], 'x0(px)']):
-                cv2.setMouseCallback(file_name_, coordinates)
-                cv2.waitKey(0)
-        jcheck.append(j)  # 物理座標用
-        j = -1
-        cv2.destroyAllWindows()
+class PyCorec:
+    def __init__(self):
+        self.i = 0
+        self.j = -1
+        self.df = pd.DataFrame()
+        self.all_files = []
+        self.img2 = np.zeros((10, 10, 3), np.uint8)
+        self.interval = 0
+        self.file_name_ = Path().stem
 
-    # cm/pxの値受け取り
-    scale = scaletxtbox.get()
-    # 表示倍率による変化を適用
-    if scale == '':
-        jmax = max(jcheck)
-        for j in range(0, jmax + 1):
-            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
-            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
+    # 画像の選択と表示(読込画像フォルダ選択(一括選択)モード)
+    def getdir(self):
+        # 連番画像のフォルダを指定
+        dir_path = tk.filedialog.askdirectory(title='画像フォルダ選択')
+        # 連番画像のファイルリストを作成
+        path = Path(dir_path)
+        all_files = natsorted([p for p in path.glob('**/*')
+                               if not re.search('Bkg', str(p)) and re.search('/*\.(jpg|jpeg|png|tif|bmp)', str(p))])
+        # インターバルに応じてファイルリストを修正
+        self.interval = int(intervaltxtbox.get())
+        self.all_files = all_files[::self.interval]
+        # 画像の表示と座標データ保存
+        self.record()
 
-    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
-    if not scale == '':
-        scale = float(scale)
-        jmax = max(jcheck)
-        for j in range(0, jmax + 1):
-            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
-            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
-            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale
-            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale
-    # 実行時刻の記録
-    now = datetime.datetime.now()
-    current_time = now.strftime('%Y-%m-%d-%H-%M')
-    # 保存ファイル名を指定
-    csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
-                                               filetypes=[("CSV Files", ".csv")],
-                                               initialfile=f'pycorec_{current_time}')
-    df.to_csv(f'{csv_path}.csv', encoding='utf-8')
+    # 画像の選択と表示(読込画像ファイル選択(連続範囲選択)モード)
+    def getrange(self):
+        # 使用する画像のファイルリストを指定
+        filetyp = [('画像ファイル', '*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif')]
+        file_path = tk.filedialog.askopenfilenames(title='画像ファイル選択(連続範囲選択)', filetypes=filetyp)
+        # 画像のファイルリストを作成
+        all_files = natsorted(file_path)
+        # インターバルに応じてファイルリストを修正
+        self.interval = int(intervaltxtbox.get())
+        self.all_files = all_files[::self.interval]
+        # 画像の表示と座標データ保存
+        self.record()
 
+    # 画像の選択と表示(読込画像ファイル選択(複数・任意選択可能)モード)
+    def getfile(self):
+        # 使用する画像のファイルリストを指定
+        filetyp = [('画像ファイル', '*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif')]
+        file_path = tk.filedialog.askopenfilenames(title='画像ファイル選択(複数選択可)', filetypes=filetyp)
+        # 画像のファイルリストを作成
+        self.all_files = natsorted(file_path)
+        # 画像の表示と座標データ保存
+        self.record()
 
-# 画像の選択と表示(読込画像ファイル選択(連続範囲選択)モード)
-def getrange():
-    global i
-    global j
-    global df
-    global img2
-    global file_name_
-    # 使用する画像のファイルリストを指定
-    filetyp = [('画像ファイル', '*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif')]
-    file_path = tk.filedialog.askopenfilenames(title='画像ファイル選択(連続範囲選択)', filetypes=filetyp)
-    # 画像のファイルリストを作成
-    all_files = natsorted(file_path)
-    # インターバルに応じてファイルリストを修正
-    interval = int(intervaltxtbox.get())
-    all_files = all_files[::interval]
-    # 座標記録用に空のデータフレームを作成
-    df = pd.DataFrame(index=range(len(all_files)))
-    # 相対時刻の列を作成
-    fps = fpstxtbox.get()
-    if not fps == '':
-        fps = int(fpstxtbox.get())
-        spf = 1 / fps
-        timestep = interval * spf
-        end = 0 + (len(all_files) - 1) * timestep
-        sec = np.linspace(0, end, num=len(all_files))
-        df['file name'] = ''
-        df['Time(s)'] = sec
-    # 物理座標用j記録
-    jcheck = []
-    # 画像ごとのクリック回数記録用
-    j = -1
-    # 入力された表示画像倍率を読み込む
-    magnification = float(pictxtbox.get())
-    # 1枚ずつ表示する
-    for i, file_path_ in enumerate(all_files):
-        file_name_ = Path(file_path_).stem
-        file_path_ = str(file_path_)
-        df.at[df.index[i], 'file name'] = file_name_
-        # 画像の読み込み
-        # OpenCVは日本語パス名非対応なためimreadでは日本語含まれると読み込めない
-        # NumPyで画像ファイルを開き，OpenCV(Numpyのndarray)に変換して読み込む
-        buf = np.fromfile(file_path_, np.uint8)
-        img = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
-        # アスペクト比を固定して画像を変換
-        img2 = cv2.resize(img, dsize=None, fx=magnification, fy=magnification)
-        # 画像の表示
-        cv2.imshow(file_name_, img2)
-        # cv2.resizeWindow(file_name_, 960, 732)  # ウィンドウサイズ
-        cv2.moveWindow(file_name_, 300, 0)  # ウィンドウ表示位置指定
-        cv2.setMouseCallback(file_name_, coordinates)
-        cv2.waitKey(0)
-        if i > 0:
-            while pd.isna(df.at[df.index[i], 'x0(px)']):
-                cv2.setMouseCallback(file_name_, coordinates)
-                cv2.waitKey(0)
-        jcheck.append(j)  # 物理座標用
-        j = -1
-        cv2.destroyAllWindows()
+    # 画像の表示と座標データ保存
+    def record(self):
+        # 座標記録用に空のデータフレームを作成
+        self.df = pd.DataFrame(index=range(len(self.all_files)))
+        # 相対時刻の列を作成(fpsが入力されたときのみ動作)
+        fps = fpstxtbox.get()
+        if not fps == '':
+            fps = int(fps)
+            spf = 1 / fps
+            timestep = self.interval * spf
+            end = 0 + (len(self.all_files) - 1) * timestep
+            sec = np.linspace(0, end, num=len(self.all_files))
+            self.df['file name'] = ''
+            self.df['Time(s)'] = sec
+        # 物理座標用j記録
+        jcheck = []
+        # 画像ごとのクリック回数記録用
+        self.j = -1
+        # 入力された表示画像倍率を読み込む
+        magnification = float(pictxtbox.get())
+        # 1枚ずつ表示する
+        for self.i, file_path_ in enumerate(self.all_files):
+            self.file_name_ = Path(file_path_).stem
+            file_path_ = str(file_path_)
+            self.df.at[self.df.index[self.i], 'file name'] = self.file_name_
+            # 画像の読み込み
+            # OpenCVは日本語パス名非対応なためimreadでは日本語含まれると読み込めない
+            # NumPyで画像ファイルを開き，OpenCV(Numpyのndarray)に変換して読み込む
+            buf = np.fromfile(file_path_, np.uint8)
+            img = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
+            # アスペクト比を固定して画像を変換
+            self.img2 = cv2.resize(img, dsize=None, fx=magnification, fy=magnification)
+            # 画像の表示
+            cv2.imshow(self.file_name_, self.img2)
+            # cv2.resizeWindow(file_name_, 960, 732)  # ウィンドウサイズ
+            cv2.moveWindow(self.file_name_, 300, 0)  # ウィンドウ表示位置指定
+            cv2.setMouseCallback(self.file_name_, self.coordinates)
+            cv2.waitKey(0)
+            if self.i > 0:
+                while pd.isna(self.df.at[self.df.index[self.i], 'x0(px)']):
+                    cv2.setMouseCallback(self.file_name_, self.coordinates)
+                    cv2.waitKey(0)
+            jcheck.append(self.j)  # 物理座標用
+            self.j = -1
+            cv2.destroyAllWindows()
 
-    # cm/pxの値受け取り
-    scale = scaletxtbox.get()
-    # 表示倍率による変化を適用
-    if scale == '':
-        jmax = max(jcheck)
-        for j in range(0, jmax + 1):
-            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
-            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
+        # cm/pxの値受け取り
+        scale = scaletxtbox.get()
+        # 表示倍率による変化を適用
+        if scale == '':
+            jmax = max(jcheck)
+            for j in range(0, jmax + 1):
+                self.df[f'x{j}(px)'] = self.df[f'x{j}(px)'] / magnification
+                self.df[f'y{j}(px)'] = self.df[f'y{j}(px)'] / magnification
 
-    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
-    if not scale == '':
-        scale = float(scale)
-        jmax = max(jcheck)
-        for j in range(0, jmax + 1):
-            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
-            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
-            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale
-            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale
-    # 実行時刻の記録
-    now = datetime.datetime.now()
-    current_time = now.strftime('%Y-%m-%d-%H-%M')
-    # 保存ファイル名を指定
-    csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
-                                               filetypes=[("CSV Files", ".csv")],
-                                               initialfile=f'pycorec_{current_time}')
-    df.to_csv(f'{csv_path}.csv', encoding='utf-8')
-
-
-# 画像の選択と表示(読込画像ファイル選択(複数・任意選択可能)モード)
-def getfile():
-    global i
-    global j
-    global df
-    global img2
-    global file_name_
-    # 使用する画像のファイルリストを指定
-    filetyp = [('画像ファイル', '*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif')]
-    file_path = tk.filedialog.askopenfilenames(title='画像ファイル選択(複数選択可)', filetypes=filetyp)
-    # 画像のファイルリストを作成
-    all_files = natsorted(file_path)
-    # 座標記録用に空のデータフレームを作成
-    df = pd.DataFrame(index=range(len(all_files)))
-    # 画像ごとのクリック回数記録用
-    j = -1
-    # 物理座標用j記録
-    jcheck = []
-    # 入力された表示画像倍率を読み込む
-    magnification = float(pictxtbox.get())
-    # 1枚ずつ表示する
-    for i, file_path_ in enumerate(all_files):
-        file_name_ = Path(file_path_).stem
-        file_path_ = str(file_path_)
-        df.at[df.index[i], 'file name'] = file_name_
-        # 画像の読み込み
-        buf = np.fromfile(file_path_, np.uint8)
-        img = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
-        # アスペクト比を固定して画像を変換
-        img2 = cv2.resize(img, dsize=None, fx=magnification, fy=magnification)
-        # h2, w2 = img2.shape[:2]
-        # 画像の表示
-        cv2.imshow(file_name_, img2)
-        # cv2.resizeWindow(file_name_, 960, 732)  # ウィンドウサイズ
-        cv2.moveWindow(file_name_, 300, 0)  # ウィンドウ表示位置指定
-        cv2.setMouseCallback(file_name_, coordinates)
-        cv2.waitKey(0)
-        if i > 0:
-            while pd.isna(df.at[df.index[i], 'x0(px)']):
-                cv2.setMouseCallback(file_name_, coordinates)
-                cv2.waitKey(0)
-        jcheck.append(j)  # 物理座標用
-        j = -1
-        cv2.destroyAllWindows()
-
-    # cm/pxの値受け取り
-    scale = scaletxtbox.get()
-    # 表示倍率による変化を適用
-    if scale == '':
-        jmax = max(jcheck)
-        for j in range(0, jmax + 1):
-            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
-            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
-
-    # 物理座標系に変換(cm/pxが入力されたときのみ動作)
-    if not scale == '':
-        scale = float(scale)
-        jmax = max(jcheck)
-        for j in range(0, jmax + 1):
-            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
-            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
-            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale
-            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale
-    # 実行時刻の記録
-    now = datetime.datetime.now()
-    current_time = now.strftime('%Y-%m-%d-%H-%M')
-    # 保存ファイル名を指定
-    csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
-                                               filetypes=[("CSV Files", ".csv")],
-                                               initialfile=f'pycorec_{current_time}')
-    df.to_csv(f'{csv_path}.csv', encoding='utf-8')
-
-
-# マウスクリック時の動作を定義
-def coordinates(event, x, y, flags, param):
-    global j
-    global df
-    global file_name_
-
-    # マウス移動に連動して座標を表示
-    if event == cv2.EVENT_MOUSEMOVE:
-        img3 = np.copy(img2)
-        # cv2.circle(img3, center=(x, y), radius=5, color=255, thickness=-1)
-        pos_str = '(' + str(x) + ',' + str(y) + ')'
-        cv2.putText(img3, pos_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (248, 180, 138), 2, cv2.LINE_AA)
-        cv2.imshow(file_name_, img3)
-
-    # 左クリックで座標を取得(複数点記録することも可能)
-    if event == cv2.EVENT_LBUTTONDOWN:
-        j += 1
-        df.at[df.index[i], f'x{j}(px)'] = x
-        df.at[df.index[i], f'y{j}(px)'] = y
-        if j <= 1:
-            print(df.loc[i - 3:i + 3, 'file name':f'y{j}(px)'])
-        if j > 1:
-            print(df.loc[i - 3:i + 3, f'x{j - 2}(px)':f'y{j}(px)'])
-
-    # 右クリックで取得座標を削除(同一画像中の複数点を遡って削除)
-    if event == cv2.EVENT_RBUTTONDOWN and j >= 0:
-        df.at[df.index[i], f'x{j}(px)'] = np.nan
-        df.at[df.index[i], f'y{j}(px)'] = np.nan
-        if j <= 1:
-            print(df.loc[i - 3:i + 3, 'file name':f'y{j}(px)'])
-        if j > 1:
-            print(df.loc[i - 3:i + 3, f'x{j - 2}(px)':f'y{j}(px)'])
-        j -= 1
-
-    # ホイールクリックで強制終了
-    if event == cv2.EVENT_MBUTTONDOWN:
+        # 物理座標系に変換(cm/pxが入力されたときのみ動作)
+        if not scale == '':
+            scale = float(scale)
+            jmax = max(jcheck)
+            for j in range(0, jmax + 1):
+                self.df[f'x{j}(px)'] = self.df[f'x{j}(px)'] / magnification
+                self.df[f'y{j}(px)'] = self.df[f'y{j}(px)'] / magnification
+                self.df[f'x{j}(cm)'] = self.df[f'x{j}(px)'] * scale
+                self.df[f'y{j}(cm)'] = self.df[f'y{j}(px)'] * scale
         # 実行時刻の記録
         now = datetime.datetime.now()
         current_time = now.strftime('%Y-%m-%d-%H-%M')
-        # 強制終了までの座標の保存ファイル名を指定
+        # 保存ファイル名を指定
         csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
                                                    filetypes=[("CSV Files", ".csv")],
-                                                   initialfile=f'pycorec_incomplete_{current_time}')
-        df.to_csv(f'{csv_path}.csv', encoding='utf-8')
-        quit()
+                                                   initialfile=f'pycorec_{current_time}')
+        self.df.to_csv(f'{csv_path}.csv', encoding='utf-8')
+
+    # マウスクリック時の動作を定義
+    def coordinates(self, mode, x, y):
+        # マウス移動に連動して座標を表示
+        if mode == cv2.EVENT_MOUSEMOVE:
+            img3 = np.copy(self.img2)
+            # cv2.circle(img3, center=(x, y), radius=5, color=255, thickness=-1)
+            pos_str = '(' + str(x) + ',' + str(y) + ')'
+            cv2.putText(img3, pos_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (248, 180, 138), 2, cv2.LINE_AA)
+            cv2.imshow(self.file_name_, img3)
+
+        # 左クリックで座標を取得(複数点記録することも可能)
+        if mode == cv2.EVENT_LBUTTONDOWN:
+            self.j += 1
+            self.df.at[self.df.index[self.i], f'x{self.j}(px)'] = x
+            self.df.at[self.df.index[self.i], f'y{self.j}(px)'] = y
+            if self.j <= 1:
+                print(self.df.loc[self.i - 3:self.i + 3, 'file name':f'y{self.j}(px)'])
+            if self.j > 1:
+                print(self.df.loc[self.i - 3:self.i + 3, f'x{self.j - 2}(px)':f'y{self.j}(px)'])
+
+        # 右クリックで取得座標を削除(同一画像中の複数点を遡って削除)
+        if mode == cv2.EVENT_RBUTTONDOWN and self.j >= 0:
+            self.df.at[self.df.index[self.i], f'x{self.j}(px)'] = np.nan
+            self.df.at[self.df.index[self.i], f'y{self.j}(px)'] = np.nan
+            if self.j <= 1:
+                print(self.df.loc[self.i - 3:self.i + 3, 'file name':f'y{self.j}(px)'])
+            if self.j > 1:
+                print(self.df.loc[self.i - 3:self.i + 3, f'x{self.j - 2}(px)':f'y{self.j}(px)'])
+            self.j -= 1
+
+        # ホイールクリックで強制終了
+        if mode == cv2.EVENT_MBUTTONDOWN:
+            # 実行時刻の記録
+            now = datetime.datetime.now()
+            current_time = now.strftime('%Y-%m-%d-%H-%M')
+            # 強制終了までの座標の保存ファイル名を指定
+            csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
+                                                       filetypes=[("CSV Files", ".csv")],
+                                                       initialfile=f'pycorec_incomplete_{current_time}')
+            self.df.to_csv(f'{csv_path}.csv', encoding='utf-8')
+            quit()
+
+    # csvファイルを保存
+    def csv(self):
+        # 実行時刻の記録
+        now = datetime.datetime.now()
+        current_time = now.strftime('%Y-%m-%d-%H-%M')
+        # 保存ファイル名を指定
+        csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
+                                                   filetypes=[("CSV Files", ".csv")],
+                                                   initialfile=f'pycorec_{current_time}')
+        self.df.to_csv(f'{csv_path}.csv', encoding='utf-8')
 
 
-# csvファイルを保存
-def csv():
-    # 実行時刻の記録
-    now = datetime.datetime.now()
-    current_time = now.strftime('%Y-%m-%d-%H-%M')
-    # 保存ファイル名を指定
-    csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
-                                               filetypes=[("CSV Files", ".csv")],
-                                               initialfile=f'pycorec_{current_time}')
-    df.to_csv(f'{csv_path}.csv', encoding='utf-8')
-
-
-# 画像ごとのクリック回数記録用
-j = -1
+# GUI
+# インスタンスの作成
+PyCorec = PyCorec()
 # ウインドウの作成
 root = tk.Tk()
 # ウインドウのタイトル
@@ -392,13 +260,13 @@ centerlabel = tk.Label(text='マウスホイール押し込み: 強制終了', b
 centerlabel.place(x=15, y=560)
 
 # ボタン作成
-button = tk.Button(frame_menu, text='フォルダ選択(フォルダ内画像一括選択)', command=getdir)
+button = tk.Button(frame_menu, text='フォルダ選択(フォルダ内画像一括選択)', command=PyCorec.getdir)
 button.grid(row=1, column=0, sticky=tk.W)
-button = tk.Button(frame_menu, text='ファイル選択(連続範囲選択)', command=getrange)
+button = tk.Button(frame_menu, text='ファイル選択(連続範囲選択)', command=PyCorec.getrange)
 button.grid(row=14, column=0, sticky=tk.W)
-button = tk.Button(frame_menu, text='ファイル選択(複数・任意選択可能)', command=getfile)
+button = tk.Button(frame_menu, text='ファイル選択(複数・任意選択可能)', command=PyCorec.getfile)
 button.grid(row=28, column=0, sticky=tk.W)
-button_csv = tk.Button(frame_save, text='csvファイル保存', command=csv)
+button_csv = tk.Button(frame_save, text='csvファイル保存', command=PyCorec.csv)
 button_csv.grid(row=1, column=0, sticky=tk.W)
 # button_png = tk.Button(frame_save, text='時系列座標グラフ保存', command=csv)
 # button_png.grid(row=1, column=1, sticky=tk.W)
