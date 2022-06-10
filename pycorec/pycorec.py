@@ -108,22 +108,13 @@ class PyCorec:
 
         # cm/pxの値受け取り
         scale = scaletxtbox.get()
-        # 表示倍率による変化を適用
-        if scale == '':
-            jmax = max(jcheck)
-            for j in range(0, jmax + 1):
-                self.df[f'x{j}(px)'] = self.df[f'x{j}(px)'] / magnification
-                self.df[f'y{j}(px)'] = self.df[f'y{j}(px)'] / magnification
-
         # 物理座標系に変換(cm/pxが入力されたときのみ動作)
         if not scale == '':
             scale = float(scale)
             jmax = max(jcheck)
             for j in range(0, jmax + 1):
-                self.df[f'x{j}(px)'] = self.df[f'x{j}(px)'] / magnification
-                self.df[f'y{j}(px)'] = self.df[f'y{j}(px)'] / magnification
-                self.df[f'x{j}(cm)'] = self.df[f'x{j}(px)'] * scale
-                self.df[f'y{j}(cm)'] = self.df[f'y{j}(px)'] * scale
+                self.df[f'x{j}(cm)'] = self.df[f'x{j}(px)'] * scale / magnification
+                self.df[f'y{j}(cm)'] = self.df[f'y{j}(px)'] * scale / magnification
         # 実行時刻の記録
         now = datetime.datetime.now()
         current_time = now.strftime('%Y-%m-%d-%H-%M')
@@ -134,9 +125,9 @@ class PyCorec:
         self.df.to_csv(f'{csv_path}.csv', encoding='utf-8')
 
     # マウスクリック時の動作を定義
-    def coordinates(self, mode, x, y):
+    def coordinates(self, event, x, y, flags, params):
         # マウス移動に連動して座標を表示
-        if mode == cv2.EVENT_MOUSEMOVE:
+        if event == cv2.EVENT_MOUSEMOVE:
             img3 = np.copy(self.img2)
             # cv2.circle(img3, center=(x, y), radius=5, color=255, thickness=-1)
             pos_str = '(' + str(x) + ',' + str(y) + ')'
@@ -144,7 +135,7 @@ class PyCorec:
             cv2.imshow(self.file_name_, img3)
 
         # 左クリックで座標を取得(複数点記録することも可能)
-        if mode == cv2.EVENT_LBUTTONDOWN:
+        if event == cv2.EVENT_LBUTTONDOWN:
             self.j += 1
             self.df.at[self.df.index[self.i], f'x{self.j}(px)'] = x
             self.df.at[self.df.index[self.i], f'y{self.j}(px)'] = y
@@ -154,7 +145,7 @@ class PyCorec:
                 print(self.df.loc[self.i - 3:self.i + 3, f'x{self.j - 2}(px)':f'y{self.j}(px)'])
 
         # 右クリックで取得座標を削除(同一画像中の複数点を遡って削除)
-        if mode == cv2.EVENT_RBUTTONDOWN and self.j >= 0:
+        if event == cv2.EVENT_RBUTTONDOWN and self.j >= 0:
             self.df.at[self.df.index[self.i], f'x{self.j}(px)'] = np.nan
             self.df.at[self.df.index[self.i], f'y{self.j}(px)'] = np.nan
             if self.j <= 1:
@@ -164,7 +155,7 @@ class PyCorec:
             self.j -= 1
 
         # ホイールクリックで強制終了
-        if mode == cv2.EVENT_MBUTTONDOWN:
+        if event == cv2.EVENT_MBUTTONDOWN:
             # 実行時刻の記録
             now = datetime.datetime.now()
             current_time = now.strftime('%Y-%m-%d-%H-%M')
