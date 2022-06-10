@@ -1,4 +1,4 @@
-
+# 連番画像ピクセル座標取得プログラム(pycorec)
 # ライブラリのインポート (system-included)
 import datetime
 from pathlib import Path
@@ -42,6 +42,8 @@ def getdir():
         df['Time(s)'] = sec
     # 物理座標用j記録
     jcheck = []
+    # 画像ごとのクリック回数記録用
+    j = -1
     # 入力された表示画像倍率を読み込む
     magnification = float(pictxtbox.get())
     # 1枚ずつ表示する
@@ -75,7 +77,7 @@ def getdir():
     # 表示倍率による変化を適用
     if scale == '':
         jmax = max(jcheck)
-        for j in range(0, jmax+1):
+        for j in range(0, jmax + 1):
             df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
             df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
 
@@ -83,9 +85,11 @@ def getdir():
     if not scale == '':
         scale = float(scale)
         jmax = max(jcheck)
-        for j in range(0, jmax+1):
-            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale / magnification
-            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale / magnification
+        for j in range(0, jmax + 1):
+            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
+            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
+            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale
+            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale
     # 実行時刻の記録
     now = datetime.datetime.now()
     current_time = now.strftime('%Y-%m-%d-%H-%M')
@@ -125,6 +129,8 @@ def getrange():
         df['Time(s)'] = sec
     # 物理座標用j記録
     jcheck = []
+    # 画像ごとのクリック回数記録用
+    j = -1
     # 入力された表示画像倍率を読み込む
     magnification = float(pictxtbox.get())
     # 1枚ずつ表示する
@@ -167,8 +173,10 @@ def getrange():
         scale = float(scale)
         jmax = max(jcheck)
         for j in range(0, jmax + 1):
-            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale / magnification
-            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale / magnification
+            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
+            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
+            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale
+            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale
     # 実行時刻の記録
     now = datetime.datetime.now()
     current_time = now.strftime('%Y-%m-%d-%H-%M')
@@ -193,6 +201,8 @@ def getfile():
     all_files = natsorted(file_path)
     # 座標記録用に空のデータフレームを作成
     df = pd.DataFrame(index=range(len(all_files)))
+    # 画像ごとのクリック回数記録用
+    j = -1
     # 物理座標用j記録
     jcheck = []
     # 入力された表示画像倍率を読み込む
@@ -236,8 +246,10 @@ def getfile():
         scale = float(scale)
         jmax = max(jcheck)
         for j in range(0, jmax + 1):
-            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale / magnification
-            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale / magnification
+            df[f'x{j}(px)'] = df[f'x{j}(px)'] / magnification
+            df[f'y{j}(px)'] = df[f'y{j}(px)'] / magnification
+            df[f'x{j}(cm)'] = df[f'x{j}(px)'] * scale
+            df[f'y{j}(cm)'] = df[f'y{j}(px)'] * scale
     # 実行時刻の記録
     now = datetime.datetime.now()
     current_time = now.strftime('%Y-%m-%d-%H-%M')
