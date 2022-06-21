@@ -11,8 +11,44 @@ import cv2  # pip install opencv-python
 from natsort import natsorted  # pip install natsort
 import numpy as np  # pip install numpy
 import pandas as pd  # pip install pandas
+# ライブラリのインポート（original）
+from scrolledtreeview import ScrolledTreeview
 
 
+# スクロールバー付き表treeviewの設定
+class MyScrolledTreeview(ScrolledTreeview):
+    def __init__(self, master=None, **kw):
+        ScrolledTreeview.__init__(
+            self,
+            master,
+            columns=["", ""],
+            height=5,
+            **kw)
+        # 列定義
+        self.column("#0", width=0, minwidth=0)
+        self.column("", width=50, minwidth=50)
+        self.column("", width=50, minwidth=50)
+        # 見出し定義
+        # self.heading("#0", text="階層列")
+        self.heading("", text="")
+        self.heading("", text="")
+
+    # データ挿入
+    def DataInput(self, df, i, j):
+        df_col = df.columns.values
+        self['columns'] = df_col
+        counter = len(df.columns)
+        for x in range(len(df_col)):
+            self.column(x, width=85)
+            self.heading(x, text=df_col[x])
+            self.insert(parent='', index=i, values=(df[f'x{j}(px)'][i], df[f'y{j}(px)'][i]), open=True)
+
+    # 更新処理
+    def SyncData(self):
+        root.after(100, self.DataInput)
+
+
+# pycorec本体の処理
 class PyCorec:
     def __init__(self):
         self.i = 0
@@ -74,6 +110,8 @@ class PyCorec:
             sec = np.linspace(0, end, num=len(self.all_files))
             self.df['file name'] = ''
             self.df['Time(s)'] = sec
+        # cm/pxの値受け取り
+        scale = scaletxtbox.get()
         # 物理座標用j記録
         jcheck = []
         # 画像ごとのクリック回数記録用
@@ -105,9 +143,6 @@ class PyCorec:
             jcheck.append(self.j)  # 物理座標用
             self.j = -1
             cv2.destroyAllWindows()
-
-        # cm/pxの値受け取り
-        scale = scaletxtbox.get()
         # 物理座標系に変換(cm/pxが入力されたときのみ動作)
         if not scale == '':
             scale = float(scale)
@@ -139,6 +174,8 @@ class PyCorec:
             self.j += 1
             self.df.at[self.df.index[self.i], f'x{self.j}(px)'] = x
             self.df.at[self.df.index[self.i], f'y{self.j}(px)'] = y
+            tr = MyScrolledTreeview()
+            tr.DataInput(df=self.df, i=self.i, j=self.j)
             if self.j <= 1:
                 print(self.df.loc[self.i - 3:self.i + 3, 'file name':f'y{self.j}(px)'])
             if self.j > 1:
@@ -186,9 +223,9 @@ root = tk.Tk()
 # ウインドウのタイトル
 root.title('pycorec1.0.7')
 # ウインドウサイズと位置指定 幅,高さ,x座標,y座標
-root.geometry('300x600+0+0')
+root.geometry('300x800+0+0')
 # フレームの作成
-frame = tk.Frame(root, width=280, height=580, bg='#D9D9D9')
+frame = tk.Frame(root, width=280, height=780, bg='#D9D9D9')
 frame.place(x=10, y=10)
 frame_scale = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
 frame_scale.place(x=5, y=30, width=270, height=70)
@@ -198,6 +235,8 @@ frame_menu = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
 frame_menu.place(x=5, y=250, width=270, height=85)
 frame_save = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
 frame_save.place(x=5, y=380, width=270, height=30)
+frame_tree = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
+frame_tree.place(x=5, y=520, width=270, height=150)
 
 # 画像時空間パラメーターの入力
 tsparmlabel = tk.Label(text='画像時空間パラメーターの入力(オプション項目)', bg='#D9D9D9')
@@ -240,15 +279,15 @@ outputlabel.place(x=15, y=365)
 
 # 操作方法の記述
 guidelabel = tk.Label(text='操作方法', bg='#D9D9D9')
-guidelabel.place(x=15, y=480)
+guidelabel.place(x=15, y=430)
 leftlabel = tk.Label(text='左クリック: 座標記録(複数点記録可能)', bg='#D9D9D9')
-leftlabel.place(x=15, y=500)
+leftlabel.place(x=15, y=450)
 rightlabel = tk.Label(text='右クリック: 記録済み座標を削除(同一画像中のみ)', bg='#D9D9D9')
-rightlabel.place(x=15, y=520)
+rightlabel.place(x=15, y=470)
 keylabel = tk.Label(text='矢印右キー: 次の画像に移動', bg='#D9D9D9')
-keylabel.place(x=15, y=540)
+keylabel.place(x=15, y=490)
 centerlabel = tk.Label(text='マウスホイール押し込み: 強制終了', bg='#D9D9D9')
-centerlabel.place(x=15, y=560)
+centerlabel.place(x=15, y=510)
 
 # ボタン作成
 button = tk.Button(frame_menu, text='フォルダ選択(フォルダ内画像一括選択)', command=PyCorec.getdir)
@@ -261,6 +300,11 @@ button_csv = tk.Button(frame_save, text='csvファイル保存', command=PyCorec
 button_csv.grid(row=1, column=0, sticky=tk.W)
 # button_png = tk.Button(frame_save, text='時系列座標グラフ保存', command=csv)
 # button_png.grid(row=1, column=1, sticky=tk.W)
+
+# 表形式tree
+treeview = MyScrolledTreeview(frame)
+treeview.pack(padx=5, pady=530, anchor=tk.W, fill=tk.X)
+treeview.SyncData()
 
 # イベントループ
 root.mainloop()
