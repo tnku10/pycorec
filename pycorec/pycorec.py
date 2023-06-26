@@ -1,310 +1,330 @@
-# 連番画像ピクセル座標取得プログラム(pycorec)
-
-# ライブラリのインポート (system-included)
-import datetime
-from pathlib import Path
-import re
-import tkinter as tk
-import tkinter.filedialog
-# ライブラリのインポート (third-party)
-import cv2  # pip install opencv-python
+import ctypes  # system included
+import datetime  # system included
+from pathlib import Path  # system included
+import re  # system included
+import customtkinter  # pip install customtkinter
 from natsort import natsorted  # pip install natsort
-import numpy as np  # pip install numpy
-import pandas as pd  # pip install pandas
-# ライブラリのインポート（original）
-from scrolledtreeview import ScrolledTreeview
+from PIL import Image, ImageTk  # pip install pillow
 
 
-# スクロールバー付き表treeviewの設定
-class MyScrolledTreeview(ScrolledTreeview):
-    def __init__(self, master=None, **kw):
-        ScrolledTreeview.__init__(
-            self,
-            master,
-            columns=["", ""],
-            height=5,
-            **kw)
-        # 列定義
-        self.column("#0", width=0, minwidth=0)
-        self.column("", width=50, minwidth=50)
-        self.column("", width=50, minwidth=50)
-        # 見出し定義
-        # self.heading("#0", text="階層列")
-        self.heading("", text="")
-        self.heading("", text="")
-
-    # データ挿入
-    def DataInput(self, df, i, j):
-        df_col = df.columns.values
-        self['columns'] = df_col
-        counter = len(df.columns)
-        for x in range(len(df_col)):
-            self.column(x, width=85)
-            self.heading(x, text=df_col[x])
-            self.insert(parent='', index=i, values=(df[f'x{j}(px)'][i], df[f'y{j}(px)'][i]), open=True)
-
-    # 更新処理
-    def SyncData(self):
-        root.after(100, self.DataInput)
-
-
-# pycorec本体の処理
 class PyCorec:
     def __init__(self):
-        self.i = 0
-        self.j = -1
-        self.df = pd.DataFrame()
-        self.all_files = []
-        self.img2 = np.zeros((10, 10, 3), np.uint8)
-        self.interval = 0
-        self.file_name_ = Path().stem
+        self.photo_image = None
+        self.resized_image = None
+        self.image_height = None
+        self.image_width = None
+        self.cmperpx = None
+        self.fps = None
+        self.interval = 1
+        self.image_paths = []
+        self.current_image_index = 0
+        self.coordinates = []
+        self.pos = [[]]
+        self.zoom_level = 1.0
+        self.offset_x = 0
+        self.offset_y = 0
 
-    # 画像の選択と表示(読込画像フォルダ選択(一括選択)モード)
-    def getdir(self):
-        # 連番画像のフォルダを指定
-        dir_path = tk.filedialog.askdirectory(title='画像フォルダ選択')
-        # 連番画像のファイルリストを作成
+        self.root = customtkinter.CTk()
+        self.root.title("PyCorec")
+
+        # configure window size
+        user32 = ctypes.windll.user32
+        screen_width = user32.GetSystemMetrics(0)
+        screen_height = user32.GetSystemMetrics(1) - user32.GetSystemMetrics(3)
+        self.root.geometry(f"{screen_width}x{screen_height}+0+0")
+        self.root.attributes('-topmost', True)
+
+        self.frame = customtkinter.CTkFrame(self.root)
+        self.frame.pack(fill=customtkinter.BOTH, expand=True)
+
+        self.image_frame = customtkinter.CTkFrame(self.frame)
+        self.image_frame.pack(side=customtkinter.LEFT, fill=customtkinter.BOTH, expand=True)
+
+        self.canvas = customtkinter.CTkCanvas(self.image_frame, bg="white")
+        self.canvas.pack(fill=customtkinter.BOTH, expand=True)
+
+        self.bottom_frame = customtkinter.CTkFrame(self.root)
+        self.bottom_frame.pack(side=customtkinter.BOTTOM, fill=customtkinter.X)
+
+        self.label_frame = customtkinter.CTkFrame(self.bottom_frame)
+        self.label_frame.pack(side=customtkinter.LEFT, fill=customtkinter.X, padx=10, pady=10)
+
+        # labels
+        self.coordinates_label = customtkinter.CTkLabel(self.label_frame, text="Coordinates: (0, 0)")
+        self.coordinates_label.pack(side=customtkinter.LEFT)
+
+        self.filename_label = customtkinter.CTkLabel(self.label_frame, text="Filename: ")
+        self.filename_label.pack(side=customtkinter.LEFT, padx=10)
+
+        self.image_number_label = customtkinter.CTkLabel(self.label_frame, text="Image Number: ")
+        self.image_number_label.pack(side=customtkinter.LEFT, padx=10)
+
+        self.frame_interval_label = customtkinter.CTkLabel(self.label_frame, text="Frame Interval: 1")
+        self.frame_interval_label.pack(side=customtkinter.LEFT, padx=10)
+
+        self.image_size_label = customtkinter.CTkLabel(self.label_frame, text="Image Size: ")
+        self.image_size_label.pack(side=customtkinter.LEFT, padx=10)
+
+        self.resized_image_size_label = customtkinter.CTkLabel(self.label_frame, text="Resized Image Size: ")
+        self.resized_image_size_label.pack(side=customtkinter.LEFT, padx=10)
+
+        self.image_magnification_label = customtkinter.CTkLabel(self.label_frame, text="Image Magnification(%): ")
+        self.image_magnification_label.pack(side=customtkinter.LEFT, padx=10)
+
+        self.fps_label = customtkinter.CTkLabel(self.label_frame, text="fps: ")
+        self.fps_label.pack(side=customtkinter.LEFT, padx=10)
+
+        self.cmperpx_label = customtkinter.CTkLabel(self.label_frame, text="cm/px: ")
+        self.cmperpx_label.pack(side=customtkinter.LEFT, padx=10)
+
+        #  buttons
+        self.button_frame = customtkinter.CTkFrame(self.frame)
+        self.button_frame.pack(side=customtkinter.RIGHT, fill=customtkinter.Y, padx=10, pady=10)
+
+        self.next_image_button = customtkinter.CTkButton(self.button_frame, text="Open Images from Directory",
+                                                         command=self.get_dir)
+        self.next_image_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.next_image_button = customtkinter.CTkButton(self.button_frame, text="Open Images by Bounded Selection",
+                                                         command=self.get_range)
+        self.next_image_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.next_image_button = customtkinter.CTkButton(self.button_frame, text="Open Image(s) by Click",
+                                                         command=self.get_files)
+        self.next_image_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.next_image_button = customtkinter.CTkButton(self.button_frame, text="Next Image", command=self.next_image)
+        self.next_image_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.previous_image_button = customtkinter.CTkButton(self.button_frame, text="Previous Image",
+                                                             command=self.previous_image)
+        self.previous_image_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.move_up_button = customtkinter.CTkButton(self.button_frame, text="Move Up",
+                                                      command=lambda: self.move_image(0, -10))
+        self.move_up_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.move_down_button = customtkinter.CTkButton(self.button_frame, text="Move Down",
+                                                        command=lambda: self.move_image(0, 10))
+        self.move_down_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.move_left_button = customtkinter.CTkButton(self.button_frame, text="Move Left",
+                                                        command=lambda: self.move_image(-10, 0))
+        self.move_left_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.move_right_button = customtkinter.CTkButton(self.button_frame, text="Move Right",
+                                                         command=lambda: self.move_image(10, 0))
+        self.move_right_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.fit_image_to_window_button = customtkinter.CTkButton(self.button_frame, text="Fit Image to Window",
+                                                                  command=self.fit_image_to_window)
+        self.fit_image_to_window_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.fit_image_to_actual_size_button = customtkinter.CTkButton(self.button_frame,
+                                                                       text="Fit Image to Actual Size",
+                                                                       command=self.fit_image_to_actual_size)
+        self.fit_image_to_actual_size_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.canvas.bind("<Button-1>", self.on_canvas_left_click)
+        self.canvas.bind("<Button-3>", self.on_canvas_right_click)
+        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
+        self.canvas.bind("<Motion>", self.on_canvas_motion)
+        self.canvas.configure(cursor="crosshair")
+
+        self.root.bind("<Right>", self.next_image_keyboard)
+        self.root.bind("<Left>", self.previous_image_keyboard)
+
+    def configure_optional_parameter(self):
+        fps_dialog = customtkinter.CTkInputDialog(text="Input fps (Optional):\n"
+                                                       "\n"
+                                                       "If you want to add a time column to the output file, "
+                                                       "enter a value of fps.",
+                                                  title="fps (Optional)")
+        self.fps = float(fps_dialog.get_input())
+        self.fps_label.configure(text=f"fps: {self.fps}")
+        cmperpx_dialog = customtkinter.CTkInputDialog(text="Input cm/px (Optional):\n"
+                                                           "\n"
+                                                           "If you want to add physical coordinates (cm) converted "
+                                                           "from image coordinates (px) to the output file, "
+                                                           "enter a value of cm/px.",
+                                                      title="cm/px (Optional)")
+        self.cmperpx = float(cmperpx_dialog.get_input())
+        self.cmperpx_label.configure(text=f"cm/px: {self.cmperpx}")
+
+    def get_dir(self):
+        dir_path = customtkinter.filedialog.askdirectory(title='Open Images from Directory')
         path = Path(dir_path)
-        all_files = natsorted([p for p in path.glob('**/*')
-                               if not re.search('Bkg', str(p)) and re.search('/*\.(jpg|jpeg|png|tif|bmp)', str(p))])
-        # インターバルに応じてファイルリストを修正
-        self.interval = int(intervaltxtbox.get())
-        self.all_files = all_files[::self.interval]
-        # 画像の表示と座標データ保存
-        self.record()
+        image_paths = natsorted([p for p in path.glob('**/*')
+                                 if not re.search('Bkg', str(p)) and re.search('/*\.(jpg|jpeg|png|tif|bmp)', str(p))])
+        interval_dialog = customtkinter.CTkInputDialog(text="Input Frame Interval:\n"
+                                                            "\n"
+                                                            "Examples\n"
+                                                            "1: Load all frames (001.jpg, 002.jpg, 003.jpg, ...)\n"
+                                                            "2: Load frames every one frame (001,003,005,...)\n"
+                                                            "3: Load frames every two frames (001,004,007,...)\n",
+                                                       title="Frame Interval")
+        self.interval = int(interval_dialog.get_input())
+        self.frame_interval_label.configure(text=f"Frame Interval: {self.interval}")
+        self.image_paths = image_paths[::self.interval]
+        self.configure_optional_parameter()
+        self.load_image()
 
-    # 画像の選択と表示(読込画像ファイル選択(連続範囲選択)モード)
-    def getrange(self):
-        # 使用する画像のファイルリストを指定
-        filetyp = [('画像ファイル', '*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif')]
-        file_path = tk.filedialog.askopenfilenames(title='画像ファイル選択(連続範囲選択)', filetypes=filetyp)
-        # 画像のファイルリストを作成
-        all_files = natsorted(file_path)
-        # インターバルに応じてファイルリストを修正
-        self.interval = int(intervaltxtbox.get())
-        self.all_files = all_files[::self.interval]
-        # 画像の表示と座標データ保存
-        self.record()
+    def get_range(self):
+        file_type = [("Supported Files", "*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif")]
+        image_paths = customtkinter.filedialog.askopenfilenames(title="Open Images by Bounded Selection",
+                                                                filetypes=file_type)
+        image_paths = natsorted(image_paths)
+        interval_dialog = customtkinter.CTkInputDialog(text="Input Frame Interval:\n"
+                                                            "\n"
+                                                            "Examples\n"
+                                                            "1: Load all frames (001.jpg, 002.jpg, 003.jpg, ...)\n"
+                                                            "2: Load frames every one frame (001,003,005,...)\n"
+                                                            "3: Load frames every two frames (001,004,007,...)\n",
+                                                       title="Frame Interval")
+        self.interval = int(interval_dialog.get_input())
+        self.frame_interval_label.configure(text=f"Frame Interval: {self.interval}")
+        self.image_paths = image_paths[::self.interval]
+        self.configure_optional_parameter()
+        self.load_image()
 
-    # 画像の選択と表示(読込画像ファイル選択(複数・任意選択可能)モード)
-    def getfile(self):
-        # 使用する画像のファイルリストを指定
-        filetyp = [('画像ファイル', '*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif')]
-        file_path = tk.filedialog.askopenfilenames(title='画像ファイル選択(複数選択可)', filetypes=filetyp)
-        # 画像のファイルリストを作成
-        self.all_files = natsorted(file_path)
-        # 画像の表示と座標データ保存
-        self.record()
+    def get_files(self):
+        file_type = [("Supported Files", "*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif")]
+        image_paths = customtkinter.filedialog.askopenfilenames(title="Open Image(s) by Click", filetypes=file_type)
+        self.image_paths = natsorted(image_paths)
+        self.configure_optional_parameter()
+        self.load_image()
 
-    # 画像の表示と座標データ保存
-    def record(self):
-        # 座標記録用に空のデータフレームを作成
-        self.df = pd.DataFrame(index=range(len(self.all_files)))
-        # 相対時刻の列を作成(fpsが入力されたときのみ動作)
-        fps = fpstxtbox.get()
-        if not fps == '':
-            fps = int(fps)
-            spf = 1 / fps
-            timestep = self.interval * spf
-            end = 0 + (len(self.all_files) - 1) * timestep
-            sec = np.linspace(0, end, num=len(self.all_files))
-            self.df['file name'] = ''
-            self.df['Time(s)'] = sec
-        # cm/pxの値受け取り
-        scale = scaletxtbox.get()
-        # 物理座標用j記録
-        jcheck = []
-        # 画像ごとのクリック回数記録用
-        self.j = -1
-        # 入力された表示画像倍率を読み込む
-        magnification = float(pictxtbox.get())
-        # 1枚ずつ表示する
-        for self.i, file_path_ in enumerate(self.all_files):
-            self.file_name_ = Path(file_path_).stem
-            file_path_ = str(file_path_)
-            self.df.at[self.df.index[self.i], 'file name'] = self.file_name_
-            # 画像の読み込み
-            # OpenCVは日本語パス名非対応なためimreadでは日本語含まれると読み込めない
-            # NumPyで画像ファイルを開き，OpenCV(Numpyのndarray)に変換して読み込む
-            buf = np.fromfile(file_path_, np.uint8)
-            img = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
-            # アスペクト比を固定して画像を変換
-            self.img2 = cv2.resize(img, dsize=None, fx=magnification, fy=magnification)
-            # 画像の表示
-            cv2.imshow(self.file_name_, self.img2)
-            # cv2.resizeWindow(file_name_, 960, 732)  # ウィンドウサイズ
-            cv2.moveWindow(self.file_name_, 300, 0)  # ウィンドウ表示位置指定
-            cv2.setMouseCallback(self.file_name_, self.coordinates)
-            cv2.waitKey(0)
-            if self.i > 0:
-                while pd.isna(self.df.at[self.df.index[self.i], 'x0(px)']):
-                    cv2.setMouseCallback(self.file_name_, self.coordinates)
-                    cv2.waitKey(0)
-            jcheck.append(self.j)  # 物理座標用
-            self.j = -1
-            cv2.destroyAllWindows()
-        # 物理座標系に変換(cm/pxが入力されたときのみ動作)
-        if not scale == '':
-            scale = float(scale)
-            jmax = max(jcheck)
-            for j in range(0, jmax + 1):
-                self.df[f'x{j}(cm)'] = self.df[f'x{j}(px)'] * scale / magnification
-                self.df[f'y{j}(cm)'] = self.df[f'y{j}(px)'] * scale / magnification
-        # 実行時刻の記録
+    def load_image(self, actual_size=False):
+        image_path = self.image_paths[self.current_image_index]
+        image = Image.open(image_path)
+        self.image_width, self.image_height = image.size
+        self.image_size_label.configure(text=f"Image Size: {self.image_width} x {self.image_height}")
+        self.resized_image = self.resize_image(image, actual_size)
+        self.photo_image = ImageTk.PhotoImage(self.resized_image)
+        self.canvas.delete("all")
+        self.canvas.create_image(0, 0, anchor=customtkinter.NW, image=self.photo_image)
+
+        self.update_labels(image_path)
+
+    def resize_image(self, image, actual_size):
+        width, height = image.size
+        max_width = self.image_frame.winfo_width()
+        max_height = self.image_frame.winfo_height()
+        if actual_size:
+            new_width = width
+            new_height = height
+        else:
+            magnification_ratio = min(max_width / width, max_height / height)
+            new_width = int(width * magnification_ratio * self.zoom_level)
+            new_height = int(height * magnification_ratio * self.zoom_level)
+
+            if new_width <= 0 or new_height <= 0:
+                return image
+
+        resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+        return resized_image
+
+    def zoom_image(self, zoom_in):
+        if zoom_in:
+            self.zoom_level *= 1.1
+        else:
+            self.zoom_level /= 1.1
+
+        self.canvas.delete("all")
+        self.load_image()
+        self.draw_coordinates()
+
+    def fit_image_to_window(self):
+        self.zoom_level = 1.0
+        self.canvas.delete("all")
+        self.load_image()
+        self.draw_coordinates()
+
+    def fit_image_to_actual_size(self):
+        actual_size = True
+        self.canvas.delete("all")
+        self.load_image(actual_size)
+        self.draw_coordinates()
+
+    def on_canvas_left_click(self, event):
+        x = (event.x - self.offset_x) / self.zoom_level
+        y = (event.y - self.offset_y) / self.zoom_level
+        self.coordinates.append((x, y))
+        self.draw_coordinates()
+        print(self.coordinates)
+
+    def on_canvas_right_click(self, event):
+        del self.coordinates[-1]
+        self.draw_coordinates()
+        print(self.coordinates)
+
+    def draw_coordinates(self):
+        self.canvas.delete("coordinates")
+        for coord in self.coordinates:
+            x, y = coord
+            x = x * self.zoom_level + self.offset_x
+            y = y * self.zoom_level + self.offset_y
+            self.canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill="red", outline="red", tags="coordinates")
+
+    # def record_coordinates(self):
+    #     self.pos.append((x, y))
+
+    def on_mouse_wheel(self, event):
+        if event.delta > 0:
+            self.zoom_image(True)
+        else:
+            self.zoom_image(False)
+
+    def next_image(self):
+        self.current_image_index = (self.current_image_index + 1) % len(self.image_paths)
+        self.coordinates = []
+        self.canvas.delete("all")
+        self.load_image()
+
+    def previous_image(self):
+        self.current_image_index = (self.current_image_index - 1) % len(self.image_paths)
+        self.coordinates = []
+        self.canvas.delete("all")
+        self.load_image()
+
+    def update_coordinates_label(self, x, y):
+        self.coordinates_label.configure(text=f"Coordinates: ({x}, {y})")
+
+    def update_labels(self, image_path):
+        self.filename_label.configure(text=f"Filename: {Path(image_path).name}")
+        self.image_number_label.configure(text=f"Image Number: {self.current_image_index + 1}/{len(self.image_paths)}")
+        self.resized_image_size_label.configure(text=f"Resized Image Size: "
+                                                     f"{self.resized_image.width} x {self.resized_image.height}")
+        image_magnification = (self.resized_image.width / self.image_width) * 100
+        self.image_magnification_label.configure(text=f"Image Magnification(%): {image_magnification:.1f}")
+
+    def move_image(self, dx, dy):
+        self.offset_x += dx
+        self.offset_y += dy
+        self.canvas.delete("all")
+        self.load_image()
+        self.draw_coordinates()
+
+    def on_canvas_motion(self, event):
+        x = (event.x - self.offset_x) / self.zoom_level
+        y = (event.y - self.offset_y) / self.zoom_level
+        self.update_coordinates_label(round(x), round(y))
+
+    def next_image_keyboard(self, event):
+        self.next_image()
+
+    def previous_image_keyboard(self, event):
+        self.previous_image()
+
+    def save_csv(self):
         now = datetime.datetime.now()
-        current_time = now.strftime('%Y-%m-%d-%H-%M')
-        # 保存ファイル名を指定
-        csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
-                                                   filetypes=[("CSV Files", ".csv")],
-                                                   initialfile=f'pycorec_{current_time}')
+        current_time = now.strftime('%Y-%m-%d-%H-%M-%S')
+        csv_path = customtkinter.filedialog.asksaveasfilename(title="save coordinates file",
+                                                              filetypes=[("CSV Files", ".csv")],
+                                                              initialfile=f"PyCorec_{current_time}")
         self.df.to_csv(f'{csv_path}.csv', encoding='utf-8')
 
-    # マウスクリック時の動作を定義
-    def coordinates(self, event, x, y, flags, params):
-        # マウス移動に連動して座標を表示
-        if event == cv2.EVENT_MOUSEMOVE:
-            img3 = np.copy(self.img2)
-            # cv2.circle(img3, center=(x, y), radius=5, color=255, thickness=-1)
-            pos_str = '(' + str(x) + ',' + str(y) + ')'
-            cv2.putText(img3, pos_str, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (248, 180, 138), 2, cv2.LINE_AA)
-            cv2.imshow(self.file_name_, img3)
 
-        # 左クリックで座標を取得(複数点記録することも可能)
-        if event == cv2.EVENT_LBUTTONDOWN:
-            self.j += 1
-            self.df.at[self.df.index[self.i], f'x{self.j}(px)'] = x
-            self.df.at[self.df.index[self.i], f'y{self.j}(px)'] = y
-            tr = MyScrolledTreeview()
-            tr.DataInput(df=self.df, i=self.i, j=self.j)
-            if self.j <= 1:
-                print(self.df.loc[self.i - 3:self.i + 3, 'file name':f'y{self.j}(px)'])
-            if self.j > 1:
-                print(self.df.loc[self.i - 3:self.i + 3, f'x{self.j - 2}(px)':f'y{self.j}(px)'])
-
-        # 右クリックで取得座標を削除(同一画像中の複数点を遡って削除)
-        if event == cv2.EVENT_RBUTTONDOWN and self.j >= 0:
-            self.df.at[self.df.index[self.i], f'x{self.j}(px)'] = np.nan
-            self.df.at[self.df.index[self.i], f'y{self.j}(px)'] = np.nan
-            if self.j <= 1:
-                print(self.df.loc[self.i - 3:self.i + 3, 'file name':f'y{self.j}(px)'])
-            if self.j > 1:
-                print(self.df.loc[self.i - 3:self.i + 3, f'x{self.j - 2}(px)':f'y{self.j}(px)'])
-            self.j -= 1
-
-        # ホイールクリックで強制終了
-        if event == cv2.EVENT_MBUTTONDOWN:
-            # 実行時刻の記録
-            now = datetime.datetime.now()
-            current_time = now.strftime('%Y-%m-%d-%H-%M')
-            # 強制終了までの座標の保存ファイル名を指定
-            csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
-                                                       filetypes=[("CSV Files", ".csv")],
-                                                       initialfile=f'pycorec_incomplete_{current_time}')
-            self.df.to_csv(f'{csv_path}.csv', encoding='utf-8')
-            quit()
-
-    # csvファイルを保存
-    def csv(self):
-        # 実行時刻の記録
-        now = datetime.datetime.now()
-        current_time = now.strftime('%Y-%m-%d-%H-%M')
-        # 保存ファイル名を指定
-        csv_path = tk.filedialog.asksaveasfilename(title='csvファイル保存先・ファイル名指定',
-                                                   filetypes=[("CSV Files", ".csv")],
-                                                   initialfile=f'pycorec_{current_time}')
-        self.df.to_csv(f'{csv_path}.csv', encoding='utf-8')
-
-
-# GUI
-# インスタンスの作成
-PyCorec = PyCorec()
-# ウインドウの作成
-root = tk.Tk()
-# ウインドウのタイトル
-root.title('pycorec1.0.7')
-# ウインドウサイズと位置指定 幅,高さ,x座標,y座標
-root.geometry('300x800+0+0')
-# フレームの作成
-frame = tk.Frame(root, width=280, height=780, bg='#D9D9D9')
-frame.place(x=10, y=10)
-frame_scale = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
-frame_scale.place(x=5, y=30, width=270, height=70)
-frame_display = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
-frame_display.place(x=5, y=145, width=270, height=70)
-frame_menu = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
-frame_menu.place(x=5, y=250, width=270, height=85)
-frame_save = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
-frame_save.place(x=5, y=380, width=270, height=30)
-frame_tree = tk.Frame(frame, relief=tk.FLAT, bg='#E6E6E6', bd=2)
-frame_tree.place(x=5, y=520, width=270, height=150)
-
-# 画像時空間パラメーターの入力
-tsparmlabel = tk.Label(text='画像時空間パラメーターの入力(オプション項目)', bg='#D9D9D9')
-tsparmlabel.place(x=15, y=15)
-# fps指定用テキストボックスの作成
-fpstxtbox = tk.Entry(width=7)
-fpstxtbox.place(x=120, y=50)
-fpslabel = tk.Label(text='フレームレート(fps)', bg='#E6E6E6')
-fpslabel.place(x=25, y=50)
-# 物理座標変換スケール(cm/px)指定用テキストボックスの作成
-scaletxtbox = tk.Entry(width=7)
-scaletxtbox.place(x=185, y=80)
-scalelabel = tk.Label(text='物理座標変換スケール(cm/px)', bg='#E6E6E6')
-scalelabel.place(x=25, y=80)
-
-# 画像の読み込みに関するパラメーター入力とモード選択
-dpparmlabel = tk.Label(text='画像読み込みパラメーターの指定', bg='#D9D9D9')
-dpparmlabel.place(x=15, y=130)
-# 表示画像サイズ縮小のための倍率指定用テキストボックスの作成
-pictxtbox = tk.Entry(width=7)
-pictxtbox.insert(0, '0.5')
-pictxtbox.place(x=130, y=165)
-piclabel = tk.Label(text='画像の表示倍率', bg='#E6E6E6')
-piclabel.place(x=25, y=165)
-# フレームインターバル(画像読み込み間隔)の指定用テキストボックスの作成
-intervaltxtbox = tk.Entry(width=7)
-intervaltxtbox.insert(0, '1')
-intervaltxtbox.place(x=130, y=195)
-intervallabel = tk.Label(text='フレームインターバル', bg='#E6E6E6')
-intervallabel.place(x=25, y=195)
-noticelabel = tk.Label(text='(1=連番読込)', bg='#E6E6E6')
-noticelabel.place(x=185, y=195)
-# 画像の読み込み
-modelabel = tk.Label(text='画像読み込み方法の選択', bg='#D9D9D9')
-modelabel.place(x=15, y=235)
-
-# データの出力
-outputlabel = tk.Label(text='データの出力', bg='#D9D9D9')
-outputlabel.place(x=15, y=365)
-
-# 操作方法の記述
-guidelabel = tk.Label(text='操作方法', bg='#D9D9D9')
-guidelabel.place(x=15, y=430)
-leftlabel = tk.Label(text='左クリック: 座標記録(複数点記録可能)', bg='#D9D9D9')
-leftlabel.place(x=15, y=450)
-rightlabel = tk.Label(text='右クリック: 記録済み座標を削除(同一画像中のみ)', bg='#D9D9D9')
-rightlabel.place(x=15, y=470)
-keylabel = tk.Label(text='矢印右キー: 次の画像に移動', bg='#D9D9D9')
-keylabel.place(x=15, y=490)
-centerlabel = tk.Label(text='マウスホイール押し込み: 強制終了', bg='#D9D9D9')
-centerlabel.place(x=15, y=510)
-
-# ボタン作成
-button = tk.Button(frame_menu, text='フォルダ選択(フォルダ内画像一括選択)', command=PyCorec.getdir)
-button.grid(row=1, column=0, sticky=tk.W)
-button = tk.Button(frame_menu, text='ファイル選択(連続範囲選択)', command=PyCorec.getrange)
-button.grid(row=14, column=0, sticky=tk.W)
-button = tk.Button(frame_menu, text='ファイル選択(複数・任意選択可能)', command=PyCorec.getfile)
-button.grid(row=28, column=0, sticky=tk.W)
-button_csv = tk.Button(frame_save, text='csvファイル保存', command=PyCorec.csv)
-button_csv.grid(row=1, column=0, sticky=tk.W)
-# button_png = tk.Button(frame_save, text='時系列座標グラフ保存', command=csv)
-# button_png.grid(row=1, column=1, sticky=tk.W)
-
-# 表形式tree
-treeview = MyScrolledTreeview(frame)
-treeview.pack(padx=5, pady=530, anchor=tk.W, fill=tk.X)
-treeview.SyncData()
-
-# イベントループ
-root.mainloop()
+if __name__ == "__main__":
+    app = PyCorec()
+    app.root.mainloop()
