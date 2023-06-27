@@ -4,7 +4,16 @@ from pathlib import Path  # system included
 import re  # system included
 import customtkinter  # pip install customtkinter
 from natsort import natsorted  # pip install natsort
+from openpyxl import Workbook  # pip install openpyxl
 from PIL import Image, ImageTk  # pip install pillow
+
+
+def write_list_2d(sheet, l_2d, start_row, start_col):
+    for y, row in enumerate(l_2d):
+        for x, cell in enumerate(row):
+            sheet.cell(row=start_row + y,
+                       column=start_col + x,
+                       value=l_2d[y][x])
 
 
 class PyCorec:
@@ -13,13 +22,13 @@ class PyCorec:
         self.resized_image = None
         self.image_height = None
         self.image_width = None
-        self.cmperpx = None
+        self.cm_per_px = None
         self.fps = None
         self.interval = 1
         self.image_paths = []
         self.current_image_index = 0
         self.coordinates = []
-        self.pos = [[]]
+        self.pos = []
         self.zoom_level = 1.0
         self.offset_x = 0
         self.offset_y = 0
@@ -74,8 +83,8 @@ class PyCorec:
         self.fps_label = customtkinter.CTkLabel(self.label_frame, text="fps: ")
         self.fps_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.cmperpx_label = customtkinter.CTkLabel(self.label_frame, text="cm/px: ")
-        self.cmperpx_label.pack(side=customtkinter.LEFT, padx=10)
+        self.cm_per_px_label = customtkinter.CTkLabel(self.label_frame, text="cm/px: ")
+        self.cm_per_px_label.pack(side=customtkinter.LEFT, padx=10)
 
         #  buttons
         self.button_frame = customtkinter.CTkFrame(self.frame)
@@ -125,6 +134,11 @@ class PyCorec:
                                                                        command=self.fit_image_to_actual_size)
         self.fit_image_to_actual_size_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
+        self.save_xlsx_button = customtkinter.CTkButton(self.button_frame,
+                                                        text="Save Coordinates as Excel File",
+                                                        command=self.save_xlsx)
+        self.save_xlsx_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
         self.canvas.bind("<Button-1>", self.on_canvas_left_click)
         self.canvas.bind("<Button-3>", self.on_canvas_right_click)
         self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
@@ -140,16 +154,20 @@ class PyCorec:
                                                        "If you want to add a time column to the output file, "
                                                        "enter a value of fps.",
                                                   title="fps (Optional)")
-        self.fps = float(fps_dialog.get_input())
+        self.fps = fps_dialog.get_input()
+        if self.fps != "":
+            self.fps = float(self.fps)
         self.fps_label.configure(text=f"fps: {self.fps}")
-        cmperpx_dialog = customtkinter.CTkInputDialog(text="Input cm/px (Optional):\n"
-                                                           "\n"
-                                                           "If you want to add physical coordinates (cm) converted "
-                                                           "from image coordinates (px) to the output file, "
-                                                           "enter a value of cm/px.",
-                                                      title="cm/px (Optional)")
-        self.cmperpx = float(cmperpx_dialog.get_input())
-        self.cmperpx_label.configure(text=f"cm/px: {self.cmperpx}")
+        cm_per_px_dialog = customtkinter.CTkInputDialog(text="Input cm/px (Optional):\n"
+                                                             "\n"
+                                                             "If you want to add physical coordinates (cm) converted "
+                                                             "from image coordinates (px) to the output file, "
+                                                             "enter a value of cm/px.",
+                                                        title="cm/px (Optional)")
+        self.cm_per_px = cm_per_px_dialog.get_input()
+        if self.cm_per_px != "":
+            self.cm_per_px = float(self.cm_per_px)
+        self.cm_per_px_label.configure(text=f"cm/px: {self.cm_per_px}")
 
     def get_dir(self):
         dir_path = customtkinter.filedialog.askdirectory(title='Open Images from Directory')
@@ -254,7 +272,8 @@ class PyCorec:
         print(self.coordinates)
 
     def on_canvas_right_click(self, event):
-        del self.coordinates[-1]
+        if len(self.coordinates) != 0:
+            del self.coordinates[-1]
         self.draw_coordinates()
         print(self.coordinates)
 
@@ -266,8 +285,11 @@ class PyCorec:
             y = y * self.zoom_level + self.offset_y
             self.canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill="red", outline="red", tags="coordinates")
 
-    # def record_coordinates(self):
-    #     self.pos.append((x, y))
+    def record_coordinates(self):
+        print(self.current_image_index)
+        self.pos.insert(self.current_image_index, self.coordinates)
+        print("pos")
+        print(self.pos)
 
     def on_mouse_wheel(self, event):
         if event.delta > 0:
@@ -276,14 +298,18 @@ class PyCorec:
             self.zoom_image(False)
 
     def next_image(self):
-        self.current_image_index = (self.current_image_index + 1) % len(self.image_paths)
-        self.coordinates = []
-        self.canvas.delete("all")
-        self.load_image()
+        if self.current_image_index + 1 == len(self.image_paths):
+            self.save_xlsx()
+        if self.current_image_index + 1 < len(self.image_paths):
+            self.record_coordinates()
+            self.coordinates = []
+            self.current_image_index = (self.current_image_index + 1) % len(self.image_paths)
+            self.canvas.delete("all")
+            self.load_image()
 
     def previous_image(self):
         self.current_image_index = (self.current_image_index - 1) % len(self.image_paths)
-        self.coordinates = []
+        self.coordinates = self.pos[self.current_image_index]
         self.canvas.delete("all")
         self.load_image()
 
@@ -316,13 +342,28 @@ class PyCorec:
     def previous_image_keyboard(self, event):
         self.previous_image()
 
-    def save_csv(self):
+    def save_xlsx(self):
+        self.record_coordinates()
         now = datetime.datetime.now()
-        current_time = now.strftime('%Y-%m-%d-%H-%M-%S')
-        csv_path = customtkinter.filedialog.asksaveasfilename(title="save coordinates file",
-                                                              filetypes=[("CSV Files", ".csv")],
-                                                              initialfile=f"PyCorec_{current_time}")
-        self.df.to_csv(f'{csv_path}.csv', encoding='utf-8')
+        current_time = now.strftime("%Y-%m-%d-%H-%M-%S")
+        xlsx_path = customtkinter.filedialog.asksaveasfilename(title="Save Coordinates File",
+                                                               filetypes=[("Excel Book", ".xlsx")],
+                                                               initialfile=f"PyCorec_{current_time}")
+        wb = Workbook()
+        ws = wb.active
+        ws["A1"] = "Index"
+        for i in range(len(self.image_paths)-1):
+            ws.cell(row=i + 2, column=1, value=i)
+        if self.fps != "":
+            ws["B1"] = "Time(s)"
+            spf = 1 / self.fps
+            timestep = self.interval * spf
+            end = 0 + (len(self.image_paths) - 1) * timestep
+            sec = [i for i in range(0, end, timestep)]
+            for i in range(len(sec)):
+                ws.cell(row=i+2, column=2, value=sec[i])
+        write_list_2d(sheet=ws, l_2d=self.pos, start_row=2, start_col=3)
+        wb.save(xlsx_path)
 
 
 if __name__ == "__main__":
