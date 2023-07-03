@@ -1,11 +1,14 @@
+import csv  # system included
 import ctypes  # system included
 import datetime  # system included
+from itertools import zip_longest  # system included
 from pathlib import Path  # system included
 import re  # system included
 from typing import Callable  # system included
 from typing import Union  # system included
 import customtkinter  # pip install customtkinter
 from natsort import natsorted  # pip install natsort
+from openpyxl.styles import Font  # pip install openpyxl
 from openpyxl import Workbook  # pip install openpyxl
 from PIL import Image, ImageTk  # pip install pillow
 
@@ -149,6 +152,7 @@ class PyCorec:
         self.current_image_index = 0
         self.coordinates = []
         self.pos = []
+        self.file_list = []
         self.zoom_level = 1.0
         self.offset_x = 0
         self.offset_y = 0
@@ -257,9 +261,9 @@ class PyCorec:
         self.blank_button = customtkinter.CTkButton(self.button_frame, text="", fg_color="transparent", hover=False)
         self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
-        self.save_xlsx_button = customtkinter.CTkButton(self.button_frame, text="Save as Excel File",
-                                                        command=self.save_xlsx)
-        self.save_xlsx_button.pack(fill=customtkinter.X, padx=10, pady=5)
+        self.save_file_button = customtkinter.CTkButton(self.button_frame, text="Save as...",
+                                                        command=self.save_file)
+        self.save_file_button.pack(fill=customtkinter.X, padx=10, pady=5)
 
         self.blank_button = customtkinter.CTkButton(self.button_frame, text="",
                                                     fg_color="transparent", hover=False)
@@ -450,12 +454,14 @@ class PyCorec:
     def record_coordinates(self):
         if len(self.pos) != self.current_image_index:
             self.pos[self.current_image_index] = self.coordinates
+            self.file_list[self.current_image_index] = self.image_file_name
         if len(self.pos) == self.current_image_index:
             self.pos.insert(self.current_image_index, self.coordinates)
+            self.file_list.insert(self.current_image_index, self.image_file_name)
 
     def next_image(self):
         if self.current_image_index + 1 == len(self.image_paths):
-            self.save_xlsx()
+            self.save_file()
         if self.current_image_index + 1 < len(self.image_paths):
             self.record_coordinates()
             self.current_image_index = (self.current_image_index + 1) % len(self.image_paths)
@@ -468,11 +474,12 @@ class PyCorec:
                 self.coordinates = []
 
     def previous_image(self):
-        self.current_image_index = (self.current_image_index - 1) % len(self.image_paths)
-        self.coordinates = self.pos[self.current_image_index]
-        self.canvas.delete("all")
-        self.load_image()
-        self.draw_coordinates()
+        if self.current_image_index != 0:
+            self.current_image_index = (self.current_image_index - 1) % len(self.image_paths)
+            self.coordinates = self.pos[self.current_image_index]
+            self.canvas.delete("all")
+            self.load_image()
+            self.draw_coordinates()
 
     def update_coordinates_label(self, x, y):
         self.coordinates_label.configure(text=f"Coordinates (px): ({x}, {y})")
@@ -486,46 +493,133 @@ class PyCorec:
         self.image_magnification_label.configure(text=f"Image Magnification (%): {image_magnification:.1f}")
         self.zoom_spinbox.set(image_magnification)
 
-    def save_xlsx(self):
+    def save_file(self):
         self.record_coordinates()
         now = datetime.datetime.now()
         current_time = now.strftime("%Y-%m-%d-%H-%M-%S")
-        xlsx_path = customtkinter.filedialog.asksaveasfilename(title="Save Coordinates File",
-                                                               filetypes=[("Excel Book", ".xlsx")],
+        save_path = customtkinter.filedialog.asksaveasfilename(title="Save Coordinates File",
+                                                               filetypes=[("Excel Book", ".xlsx"),
+                                                                          ("CSV", ".csv")],
                                                                initialfile=f"PyCorec"
-                                                                           f"{pycorec_version}_{current_time}.xlsx")
-        wb = Workbook()
-        ws = wb.active
-        ws["A1"] = "Index"
-        for i in range(len(self.image_paths)):
-            ws.cell(row=i + 2, column=1, value=i)
-        if self.fps != "":
-            ws["B1"] = "Time(s)"
-            spf = 1 / self.fps
-            timestep = self.interval * spf
-            end = 0 + (len(self.image_paths) - 1) * timestep
-            sec = [0 + i * timestep for i in range(int((end - 0) / timestep) + 1)]
-            for i in range(len(sec)):
-                ws.cell(row=i + 2, column=2, value=sec[i])
-        flat_pos = [[item for sublist in row for item in sublist] for row in self.pos]
-        flat_pos_row_length_check = [len(v) for v in flat_pos]
-        flat_pos_row_length = max(flat_pos_row_length_check)
-        flat_pos_row_set_length = flat_pos_row_length / 2
-        for i in range(1, int(flat_pos_row_set_length + 1)):
-            ws.cell(row=1, column=3 + 2 * (i - 1), value=f"x{i}(px)")
-            ws.cell(row=1, column=4 + 2 * (i - 1), value=f"y{i}(px)")
-        write_list_2d(sheet=ws, l_2d=flat_pos, start_row=2, start_col=3)
-        if self.cm_per_px != "":
-            cm_pos = [[d * self.cm_per_px for d in row] for row in flat_pos]
-            cm_pos = [[-1 * value if column % 2 != 0 else value for column, value in enumerate(row)] for row in cm_pos]
-            cm_pos_row_length_check = [len(v) for v in cm_pos]
-            cm_pos_row_length = max(cm_pos_row_length_check)
-            cm_pos_row_set_length = cm_pos_row_length / 2
-            for i in range(1, int(cm_pos_row_set_length + 1)):
-                ws.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (i - 1), value=f"x{i}(cm)")
-                ws.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 1 + 2 * (i - 1), value=f"y{i}(cm)")
-            write_list_2d(sheet=ws, l_2d=cm_pos, start_row=2, start_col=4 + 2 * (flat_pos_row_set_length + 1 - 1))
-        wb.save(xlsx_path)
+                                                                           f"{pycorec_version}_{current_time}",
+                                                               defaultextension=".xlsx")
+        if ".xlsx" in save_path:
+            wb = Workbook()
+            ws = wb.active
+            ws["A1"] = "Index"
+            ws["B1"] = "File name"
+            for i in range(len(self.file_list)):
+                ws.cell(row=i + 2, column=1, value=i)
+                ws.cell(row=i + 2, column=2, value=self.file_list[i])
+
+            if self.fps != "":
+                ws["C1"] = "Time(s)"
+                spf = 1 / self.fps
+                timestep = self.interval * spf
+                end = 0 + (len(self.image_paths) - 1) * timestep
+                sec_list = [0 + i * timestep for i in range(int((end - 0) / timestep) + 1)]
+                for i in range(len(sec_list)):
+                    ws.cell(row=i + 2, column=3, value=sec_list[i])
+
+            flat_pos = [[item for sublist in row for item in sublist] for row in self.pos]
+            flat_pos_row_length_check = [len(v) for v in flat_pos]
+            flat_pos_row_length = max(flat_pos_row_length_check)
+            flat_pos_row_set_length = flat_pos_row_length / 2
+
+            for i in range(1, int(flat_pos_row_set_length + 1)):
+                ws.cell(row=1, column=4 + 2 * (i - 1), value=f"x{i}(px)")
+                ws.cell(row=1, column=5 + 2 * (i - 1), value=f"y{i}(px)")
+            write_list_2d(sheet=ws, l_2d=flat_pos, start_row=2, start_col=4)
+
+            if self.cm_per_px != "":
+                cm_pos = [[d * self.cm_per_px for d in row] for row in flat_pos]
+                cm_pos = [[-1 * value if column % 2 != 0 else value for column, value in enumerate(row)] for row in cm_pos]
+                cm_pos_row_length_check = [len(v) for v in cm_pos]
+                cm_pos_row_length = max(cm_pos_row_length_check)
+                cm_pos_row_set_length = cm_pos_row_length / 2
+
+                for i in range(1, int(cm_pos_row_set_length + 1)):
+                    ws.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (i - 1), value=f"x{i}(cm)")
+                    ws.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 1 + 2 * (i - 1), value=f"y{i}(cm)")
+                write_list_2d(sheet=ws, l_2d=cm_pos, start_row=2, start_col=4 + 2 * (flat_pos_row_set_length + 1 - 1))
+
+                ws.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1),
+                        value=f"xm(px)")
+                ws.cell(row=2, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1),
+                        value=self.image_width)
+                ws.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 1,
+                        value=f"ym(px)")
+                ws.cell(row=2, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 1,
+                        value=self.image_height)
+                ws.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 2,
+                        value=f"xm(cm)")
+                ws.cell(row=2, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 2,
+                        value=self.image_width * self.cm_per_px)
+                ws.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 3,
+                        value=f"ym(cm)")
+                ws.cell(row=2, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 3,
+                        value=self.image_height * self.cm_per_px * -1)
+
+            font = Font(name="Segoe UI")
+            for column in range(1, int(ws.max_column) + 1):
+                for row in range(1, int(ws.max_row) + 1):
+                    cell = ws.cell(row=row, column=column)
+                    cell.font = font
+
+            wb.save(save_path)
+
+        if ".csv" in save_path:
+            col_names_list = ["Index", "File name", "Time(s)"]
+            index_list = []
+            sec_list = []
+            for i in range(len(self.file_list)):
+                index_list.append(i)
+
+            if self.fps != "":
+                spf = 1 / self.fps
+                timestep = self.interval * spf
+                end = 0 + (len(self.image_paths) - 1) * timestep
+                sec_list = [0 + i * timestep for i in range(int((end - 0) / timestep) + 1)]
+
+            col_merge_list = list(zip_longest(index_list, self.file_list, sec_list, fillvalue=None))
+            col_merge_list = [list(row) for row in col_merge_list]
+
+            flat_pos = [[item for sublist in row for item in sublist] for row in self.pos]
+            flat_pos_row_length_check = [len(v) for v in flat_pos]
+            flat_pos_row_length = max(flat_pos_row_length_check)
+            flat_pos_row_set_length = flat_pos_row_length / 2
+            for i in range(int(flat_pos_row_set_length)):
+                col_names_list.append(f"x{i + 1}(px)")
+                col_names_list.append(f"y{i + 1}(px)")
+
+            col_merge_list.append(flat_pos)
+            pos_merge_list = [item for sublist in col_merge_list for item in sublist]
+
+            if self.cm_per_px != "":
+                cm_pos = [[d * self.cm_per_px for d in row] for row in flat_pos]
+                cm_pos = [[-1 * value if column % 2 != 0 else value for column, value in enumerate(row)] for row in
+                          cm_pos]
+                cm_pos_row_length_check = [len(v) for v in cm_pos]
+                cm_pos_row_length = max(cm_pos_row_length_check)
+                cm_pos_row_set_length = cm_pos_row_length / 2
+
+                for i in range(int(cm_pos_row_set_length)):
+                    col_names_list.append(f"x{i + 1}(cm)")
+                    col_names_list.append(f"y{i + 1}(cm)")
+
+                pos_merge_list.append(cm_pos)
+                pos_merge_list = [item for sublist in pos_merge_list for item in sublist]
+
+                col_names_list.extend([f"xm(px)", f"ym(px)", f"xm(cm)", f"ym(cm)"])
+                image_size_list = [self.image_width, self.image_height,
+                                   self.image_width * self.cm_per_px, self.image_height * self.cm_per_px * -1]
+
+
+
+            with open(save_path, "w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerows(save_list)
+
 
 
 if __name__ == "__main__":
