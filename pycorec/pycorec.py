@@ -475,6 +475,8 @@ class PyCorec:
 
     def previous_image(self):
         if self.current_image_index != 0:
+            if self.current_image_index + 1 == len(self.image_paths):
+                self.record_coordinates()
             self.current_image_index = (self.current_image_index - 1) % len(self.image_paths)
             self.coordinates = self.pos[self.current_image_index]
             self.canvas.delete("all")
@@ -497,7 +499,7 @@ class PyCorec:
         self.record_coordinates()
         now = datetime.datetime.now()
         current_time = now.strftime("%Y-%m-%d-%H-%M-%S")
-        save_path = customtkinter.filedialog.asksaveasfilename(title="Save Coordinates File",
+        save_path = customtkinter.filedialog.asksaveasfilename(title="Save Coordinates File (Excel Book or CSV)",
                                                                filetypes=[("Excel Book", ".xlsx"),
                                                                           ("CSV", ".csv")],
                                                                initialfile=f"PyCorec"
@@ -572,6 +574,7 @@ class PyCorec:
             col_names_list = ["Index", "File name", "Time(s)"]
             index_list = []
             sec_list = []
+            pos_cm_list = []
             for i in range(len(self.file_list)):
                 index_list.append(i)
 
@@ -592,8 +595,11 @@ class PyCorec:
                 col_names_list.append(f"x{i + 1}(px)")
                 col_names_list.append(f"y{i + 1}(px)")
 
-            col_merge_list.append(flat_pos)
-            pos_merge_list = [item for sublist in col_merge_list for item in sublist]
+            pos_merge_list = []
+            for sublist1, sublist2 in zip(col_merge_list, flat_pos):
+                sublist1.extend(sublist2)
+                pos_merge_list.append(sublist1)
+            pos_merge_list_length = max(len(v) for v in pos_merge_list)
 
             if self.cm_per_px != "":
                 cm_pos = [[d * self.cm_per_px for d in row] for row in flat_pos]
@@ -607,19 +613,35 @@ class PyCorec:
                     col_names_list.append(f"x{i + 1}(cm)")
                     col_names_list.append(f"y{i + 1}(cm)")
 
-                pos_merge_list.append(cm_pos)
-                pos_merge_list = [item for sublist in pos_merge_list for item in sublist]
+                for row in pos_merge_list:
+                    while len(row) < pos_merge_list_length:
+                        row.append("")
+
+                for row in cm_pos:
+                    while len(row) < cm_pos_row_length:
+                        row.append("")
+
+                for sublist1, sublist2 in zip(pos_merge_list, cm_pos):
+                    sublist1.extend(sublist2)
+                    pos_cm_list.append(sublist1)
 
                 col_names_list.extend([f"xm(px)", f"ym(px)", f"xm(cm)", f"ym(cm)"])
                 image_size_list = [self.image_width, self.image_height,
                                    self.image_width * self.cm_per_px, self.image_height * self.cm_per_px * -1]
+                for i in image_size_list:
+                    pos_cm_list[0].append(i)
 
+                pos_cm_list.insert(0, col_names_list)
 
+                with open(save_path, "w", newline="") as file:
+                    writer = csv.writer(file)
+                    writer.writerows(pos_cm_list)
 
-            with open(save_path, "w", newline="") as file:
-                writer = csv.writer(file)
-                writer.writerows(save_list)
-
+            if self.cm_per_px == "":
+                pos_merge_list.insert(0, col_names_list)
+                with open(save_path, "w", newline="") as file:
+                    writer = csv.writer(file)
+                    writer.writerows(pos_merge_list)
 
 
 if __name__ == "__main__":
