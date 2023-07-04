@@ -5,7 +5,7 @@ Credits
 Development Lead
 ----------------
 
-* Yuto Tanaka <yuto-tanaka411@eis.hokudai.ac.jp>
+* Yuto Tanaka <tanaka.yuto.u10@gmail.com>
 
 Contributors
 ------------
