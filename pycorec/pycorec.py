@@ -14,7 +14,7 @@ from openpyxl import Workbook  # pip install openpyxl
 from PIL import Image, ImageTk  # pip install pillow
 from screeninfo import get_monitors  # pip install screeninfo
 
-pycorec_version = "2.0.3"
+pycorec_version = "2.0.4"
 
 
 class PyCorec:
@@ -192,6 +192,7 @@ class PyCorec:
         #  canvas
         self.canvas.bind("<Button-1>", self.on_canvas_left_click)
         self.canvas.bind("<Button-3>", self.on_canvas_right_click)
+        self.canvas.bind("<Button-2>", self.on_canvas_wheel_click)
         self.canvas.bind("<Motion>", self.on_canvas_motion)
         self.canvas.configure(cursor="crosshair")
 
@@ -366,6 +367,13 @@ class PyCorec:
             if len(self.coordinates) != 0:
                 del self.coordinates[-1]
                 self.draw_coordinates()
+
+    def on_canvas_wheel_click(self, event):
+        if self.image_file_name is not None:
+            x = float("nan")
+            y = float("nan")
+            self.coordinates.append((x, y))
+            self.draw_coordinates()
 
     def draw_coordinates(self):
         self.canvas.delete("coordinates")
