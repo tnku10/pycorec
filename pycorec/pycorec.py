@@ -14,7 +14,7 @@ from openpyxl import Workbook  # pip install openpyxl
 from PIL import Image, ImageTk  # pip install pillow
 from screeninfo import get_monitors  # pip install screeninfo
 
-pycorec_version = "2.0.4"
+pycorec_version = "2.0.5"
 
 
 class PyCorec:

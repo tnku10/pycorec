@@ -31,7 +31,7 @@ setup(
     description="Python Boilerplate contains all the boilerplate you need to create a Python package.",
     entry_points={
         'console_scripts': [
-            'pycorec=pycorec.cli:main',
+            'pycorec=pycorec.pycorec:main',
         ],
     },
     install_requires=requirements,

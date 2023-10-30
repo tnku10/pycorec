@@ -3,7 +3,7 @@ PyCorec
 =======
 
 | Sequence Images Coordinates Recoder (PyCorec)
-| Version 2.0.4 (2023-09-15)
+| Version 2.0.5 (2023-10-30)
 
 How to use
 ------------------
@@ -12,6 +12,9 @@ How to use
 
 Release
 ------------------
+| Version 2.0.5 (2023-10-30)
+| Add to pypi
+
 | Version 2.0.4 (2023-09-15)
 | Add mouse wheel click function to record nan position
 
