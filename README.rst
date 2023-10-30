@@ -42,7 +42,7 @@ Release
 
 
 Future update
---------
+------------------
 
 
 Credits
