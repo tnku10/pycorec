@@ -10,13 +10,14 @@ with open('README.rst') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-requirements = ['Click>=7.0', ]
+requirements = ['customtkinter>=5.2.0', 'Pillow>=10.0.0', 'natsort>=8.4.0',
+                'openpyxl>=3.1.2', 'screeninfo~=0.8.1', 'setuptools==68.0.0']
 
-test_requirements = [ ]
+test_requirements = []
 
 setup(
     author="Yuto Tanaka",
-    author_email='yuto-tanaka411@eis.hokudai.ac.jp',
+    author_email='tanaka.yuto.u10@gmail.com',
     python_requires='>=3.6',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
@@ -41,7 +42,7 @@ setup(
     packages=find_packages(include=['pycorec', 'pycorec.*']),
     test_suite='tests',
     tests_require=test_requirements,
-    url='https://github.com/audreyr/pycorec',
-    version='1.0.7',
+    url='https://github.com/tnku10/pycorec',
+    version='2.0.4',
     zip_safe=False,
 )
