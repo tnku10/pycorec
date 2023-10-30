@@ -6,12 +6,12 @@ PyCorec
 | Version 2.0.4 (2023-09-15)
 
 How to use
---------
+------------------
 | Run pycorec.py
 
 
 Release
---------
+------------------
 | Version 2.0.4 (2023-09-15)
 Add mouse wheel click function to record nan position
 
