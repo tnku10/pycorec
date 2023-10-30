@@ -13,7 +13,7 @@ How to use
 Release
 ------------------
 | Version 2.0.4 (2023-09-15)
-Add mouse wheel click function to record nan position
+| Add mouse wheel click function to record nan position
 
 | Version 2.0.3 (2023-08-07)
 
