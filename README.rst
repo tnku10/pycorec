@@ -3,7 +3,7 @@ PyCorec
 =======
 
 | Sequence Images Coordinates Recoder (PyCorec)
-| Version 2.0.5 (2023-10-30)
+| Version 2.0.6 (2023-10-31)
 
 How to use
 ------------------
@@ -12,6 +12,9 @@ How to use
 
 Release
 ------------------
+| Version 2.0.6 (2023-10-31)
+| Fixed to be able to run from terminal.
+
 | Version 2.0.5 (2023-10-30)
 | Add to pypi
 

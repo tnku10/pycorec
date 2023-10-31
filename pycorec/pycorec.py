@@ -14,7 +14,7 @@ from openpyxl import Workbook  # pip install openpyxl
 from PIL import Image, ImageTk  # pip install pillow
 from screeninfo import get_monitors  # pip install screeninfo
 
-pycorec_version = "2.0.5"
+pycorec_version = "2.0.6"
 
 
 class PyCorec:
@@ -786,6 +786,11 @@ class ArrowButton(customtkinter.CTkFrame):
         if self.command is not None:
             self.command(dx=10, dy=0)
             return
+
+
+def main():
+    app2 = PyCorec()
+    app2.root.mainloop()
 
 
 if __name__ == "__main__":
