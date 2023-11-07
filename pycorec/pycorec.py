@@ -14,7 +14,7 @@ from openpyxl import Workbook  # pip install openpyxl
 from PIL import Image, ImageTk  # pip install pillow
 from screeninfo import get_monitors  # pip install screeninfo
 
-pycorec_version = "2.0.6"
+pycorec_version = "2.0.7"
 
 
 class PyCorec:
@@ -239,7 +239,7 @@ class PyCorec:
         dir_path = customtkinter.filedialog.askdirectory(title='Open Images from Directory ( jpg, png, tif, bmp )')
         path = Path(dir_path)
         image_paths = natsorted([p for p in path.glob('**/*')
-                                 if not re.search('Bkg', str(p))
+                                 if not re.search('(Bkg|Sub)', str(p))
                                  and re.search('/*\.(jpg|jpeg|png|tif|bmp)', str(p))])
         if len(image_paths) != 0:
             interval_dialog = customtkinter.CTkInputDialog(text="Input\n"
