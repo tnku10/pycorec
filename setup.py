@@ -7,11 +7,8 @@ from setuptools import setup, find_packages
 with open('README.rst') as readme_file:
     readme = readme_file.read()
 
-with open('HISTORY.rst') as history_file:
-    history = history_file.read()
-
 requirements = ['customtkinter>=5.2.0', 'packaging>=23.2', 'Pillow>=10.0.0', 'natsort>=8.4.0',
-                'openpyxl>=3.1.2', 'screeninfo~=0.8.1', 'setuptools==68.0.0']
+                'openpyxl>=3.1.2', 'screeninfo~=0.8.1']
 
 test_requirements = []
 
@@ -39,7 +36,7 @@ setup(
         ],
     },
     install_requires=requirements,
-    long_description=readme + '\n\n' + history,
+    long_description=readme,
     include_package_data=True,
     keywords='pycorec',
     name='pycorec',
