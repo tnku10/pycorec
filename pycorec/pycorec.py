@@ -1,20 +1,22 @@
-import csv  # system included
+from concurrent.futures import ThreadPoolExecutor, as_completed  # system included
 import ctypes  # system included
 import ctypes.wintypes  # system included
 import datetime  # system included
-from itertools import zip_longest  # system included
 from pathlib import Path  # system included
 import re  # system included
+import threading  # system included
 from typing import Callable  # system included
 from typing import Union  # system included
 import customtkinter  # pip install customtkinter
+import cv2  # pip install opencv-python
 from natsort import natsorted  # pip install natsort
-from openpyxl.styles import Font  # pip install openpyxl
-from openpyxl import Workbook  # pip install openpyxl
+import numpy as np  # pip install numpy
+import pandas as pd  # pip install pandas
 from PIL import Image, ImageTk  # pip install pillow
 from screeninfo import get_monitors  # pip install screeninfo
+from styleframe import StyleFrame, Styler  # pip install styleframe
 
-pycorec_version = "2.0.7"
+pycorec_version = '2.0.7'
 
 
 class PyCorec:
@@ -44,20 +46,20 @@ class PyCorec:
 
         # create window
         self.root = customtkinter.CTk()
-        self.root.title(f"PyCorec {pycorec_version}")
-        customtkinter.set_appearance_mode("Dark")
+        self.root.title(f'PyCorec {pycorec_version}')
+        customtkinter.set_appearance_mode('Dark')
 
         # configure window size
         def get_dpi_scale():
             # Create a temporary window to get DPI scale
-            tmp_root = ctypes.windll.user32.CreateWindowExW(0, "STATIC", None,
+            tmp_root = ctypes.windll.user32.CreateWindowExW(0, 'STATIC', None,
                                                             0, 0, 0, 0, 0, 0, 0, 0, None)
             dpi_x = ctypes.windll.user32.GetDpiForWindow(tmp_root)
             ctypes.windll.user32.DestroyWindow(tmp_root)
             return dpi_x / 96.0  # 96 DPI is the default DPI
 
         def get_taskbar_height():
-            hwnd = ctypes.windll.user32.FindWindowW("Shell_traywnd", None)
+            hwnd = ctypes.windll.user32.FindWindowW('Shell_traywnd', None)
             rect = ctypes.wintypes.RECT()
             ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
             return int(rect.bottom) - int(rect.top)
@@ -78,7 +80,7 @@ class PyCorec:
             screen_width = int(primary_monitor.width / dpi_scale)
             screen_height = int((primary_monitor.height - taskbar_height * lower_adjustment) / dpi_scale)
 
-        self.root.geometry(f"{screen_width}x{screen_height}+0+0")
+        self.root.geometry(f'{screen_width}x{screen_height}+0+0')
         self.root.attributes('-topmost', True)
 
         # frames
@@ -88,7 +90,7 @@ class PyCorec:
         self.image_frame = customtkinter.CTkFrame(self.frame)
         self.image_frame.pack(side=customtkinter.LEFT, fill=customtkinter.BOTH, expand=True)
 
-        self.canvas = customtkinter.CTkCanvas(self.image_frame, bg="white")
+        self.canvas = customtkinter.CTkCanvas(self.image_frame, bg='white')
         self.canvas.pack(fill=customtkinter.BOTH, expand=True)
 
         self.bottom_frame = customtkinter.CTkFrame(self.root)
@@ -98,142 +100,245 @@ class PyCorec:
         self.label_frame.pack(side=customtkinter.LEFT, fill=customtkinter.X, padx=10, pady=10)
 
         # labels
-        self.coordinates_label = customtkinter.CTkLabel(self.label_frame, text="Coordinates (px): (0, 0)")
+        self.coordinates_label = customtkinter.CTkLabel(self.label_frame, text='Coordinates (px): (0, 0)')
         self.coordinates_label.pack(side=customtkinter.LEFT)
 
-        self.records_label = customtkinter.CTkLabel(self.label_frame, text="Record Points: 0")
+        self.records_label = customtkinter.CTkLabel(self.label_frame, text='Record Points: 0')
         self.records_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.frame_interval_label = customtkinter.CTkLabel(self.label_frame, text="Frame Interval: 1")
+        self.frame_interval_label = customtkinter.CTkLabel(self.label_frame, text='Frame Interval: 1')
         self.frame_interval_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.image_size_label = customtkinter.CTkLabel(self.label_frame, text="Image Size: ")
+        self.image_size_label = customtkinter.CTkLabel(self.label_frame, text='Image Size: ')
         self.image_size_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.resized_image_size_label = customtkinter.CTkLabel(self.label_frame, text="Displayed Image Size: ")
+        self.resized_image_size_label = customtkinter.CTkLabel(self.label_frame, text='Displayed Image Size: ')
         self.resized_image_size_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.image_magnification_label = customtkinter.CTkLabel(self.label_frame, text="Image Magnification (%): ")
+        self.image_magnification_label = customtkinter.CTkLabel(self.label_frame, text='Image Magnification (%): ')
         self.image_magnification_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.fps_label = customtkinter.CTkLabel(self.label_frame, text="fps: ")
+        self.fps_label = customtkinter.CTkLabel(self.label_frame, text='fps: ')
         self.fps_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.cm_per_px_x_label = customtkinter.CTkLabel(self.label_frame, text="cm/px (x): ")
+        self.cm_per_px_x_label = customtkinter.CTkLabel(self.label_frame, text='cm/px (x): ')
         self.cm_per_px_x_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.cm_per_px_y_label = customtkinter.CTkLabel(self.label_frame, text="cm/px (y): ")
+        self.cm_per_px_y_label = customtkinter.CTkLabel(self.label_frame, text='cm/px (y): ')
         self.cm_per_px_y_label.pack(side=customtkinter.LEFT, padx=10)
 
         #  buttons
         self.button_frame = customtkinter.CTkFrame(self.frame)
         self.button_frame.pack(side=customtkinter.RIGHT, fill=customtkinter.Y, padx=10, pady=10)
 
-        self.blank_button = customtkinter.CTkButton(self.button_frame, text="Open Images by",
-                                                    fg_color="transparent", hover=False)
+        self.blank_button = customtkinter.CTkButton(self.button_frame, text='Open Images by',
+                                                    fg_color='transparent', hover=False)
         self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
-        self.open_image_dir_button = customtkinter.CTkButton(self.button_frame, text="Directory Selection",
+        self.open_image_mov_button = customtkinter.CTkButton(self.button_frame, text='Video Capture',
+                                                             command=self.get_mov)
+        self.open_image_mov_button.pack(fill=customtkinter.X, padx=10, pady=10)
+
+        self.open_image_dir_button = customtkinter.CTkButton(self.button_frame, text='Directory Selection',
                                                              command=self.get_dir)
         self.open_image_dir_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
-        self.open_image_range_button = customtkinter.CTkButton(self.button_frame, text="Bounded Selection",
+        self.open_image_range_button = customtkinter.CTkButton(self.button_frame, text='Bounded Selection',
                                                                command=self.get_range)
         self.open_image_range_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
-        self.open_image_click_button = customtkinter.CTkButton(self.button_frame, text="Click Selection",
+        self.open_image_click_button = customtkinter.CTkButton(self.button_frame, text='Click Selection',
                                                                command=self.get_files)
         self.open_image_click_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
-        self.blank_button = customtkinter.CTkButton(self.button_frame, text="", fg_color="transparent",
+        self.blank_button = customtkinter.CTkButton(self.button_frame, text='', fg_color='transparent',
                                                     hover=False)
         self.blank_button.pack(fill=customtkinter.X, padx=10, pady=5)
 
-        self.blank_button = customtkinter.CTkButton(self.button_frame, text="Move Image", fg_color="transparent",
+        self.blank_button = customtkinter.CTkButton(self.button_frame, text='Move Image', fg_color='transparent',
                                                     hover=False)
         self.blank_button.pack(fill=customtkinter.X, padx=10, pady=0)
 
         self.move_button = ArrowButton(self.button_frame, command=self.move_image)
         self.move_button.pack(fill=customtkinter.X, padx=70, pady=10)
 
-        self.blank_button = customtkinter.CTkButton(self.button_frame, text="Image Magnification (%)",
-                                                    fg_color="transparent", hover=False)
+        self.blank_button = customtkinter.CTkButton(self.button_frame, text='Image Magnification (%)',
+                                                    fg_color='transparent', hover=False)
         self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
         self.zoom_spinbox = FloatSpinbox(self.button_frame, width=150, step_size=3)
         self.zoom_spinbox.pack(fill=customtkinter.X, padx=10, pady=0)
 
-        self.zoom_in_button = customtkinter.CTkButton(self.button_frame, text="Apply", command=self.zoom_image)
+        self.zoom_in_button = customtkinter.CTkButton(self.button_frame, text='Apply', command=self.zoom_image)
         self.zoom_in_button.pack(fill=customtkinter.X, padx=10, pady=5)
 
-        self.fit_image_to_window_button = customtkinter.CTkButton(self.button_frame, text="Reset to Window Size",
+        self.fit_image_to_window_button = customtkinter.CTkButton(self.button_frame, text='Reset to Window Size',
                                                                   command=self.fit_image_to_window)
         self.fit_image_to_window_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
-        self.fit_image_to_actual_size_button = customtkinter.CTkButton(self.button_frame, text="Actual Size",
+        self.fit_image_to_actual_size_button = customtkinter.CTkButton(self.button_frame, text='Actual Size',
                                                                        command=self.fit_image_to_actual_size)
         self.fit_image_to_actual_size_button.pack(fill=customtkinter.X, padx=10, pady=5)
 
-        self.blank_button = customtkinter.CTkButton(self.button_frame, text="", fg_color="transparent", hover=False)
+        self.blank_button = customtkinter.CTkButton(self.button_frame, text='', fg_color='transparent', hover=False)
         self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
-        self.save_file_button = customtkinter.CTkButton(self.button_frame, text="Save as...",
+        self.save_file_button = customtkinter.CTkButton(self.button_frame, text='Save as...',
                                                         command=self.save_file)
         self.save_file_button.pack(fill=customtkinter.X, padx=10, pady=5)
 
-        self.blank_button = customtkinter.CTkButton(self.button_frame, text="Usage\n"
-                                                                            "Next Image : → right arrow key\n"
-                                                                            "Previous Image : ← left arrow key\n"
-                                                                            "Record Coordinates : left-click\n"
-                                                                            "Delete Coordinates : right-click",
-                                                    fg_color="transparent", hover=False)
+        self.resume_recording_button = customtkinter.CTkButton(self.button_frame, text='Resume Recording',
+                                                               command=self.resume_recording)
+        self.resume_recording_button.pack(fill=customtkinter.X, padx=10, pady=5)
+
+        self.blank_button = customtkinter.CTkButton(self.button_frame, text='Usage\n'
+                                                                            'Next Image : → right arrow key\n'
+                                                                            'Previous Image : ← left arrow key\n'
+                                                                            'Record Coordinates : left-click\n'
+                                                                            'Delete Coordinates : right-click',
+                                                    fg_color='transparent', hover=False)
         self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
         #  canvas
-        self.canvas.bind("<Button-1>", self.on_canvas_left_click)
-        self.canvas.bind("<Button-3>", self.on_canvas_right_click)
-        self.canvas.bind("<Button-2>", self.on_canvas_wheel_click)
-        self.canvas.bind("<Motion>", self.on_canvas_motion)
-        self.canvas.configure(cursor="crosshair")
+        self.canvas.bind('<Button-1>', self.on_canvas_left_click)
+        self.canvas.bind('<Button-3>', self.on_canvas_right_click)
+        self.canvas.bind('<Button-2>', self.on_canvas_wheel_click)
+        self.canvas.bind('<Motion>', self.on_canvas_motion)
+        self.canvas.configure(cursor='crosshair')
 
-        self.root.bind("<Right>", self.next_image_keyboard)
-        self.root.bind("<Left>", self.previous_image_keyboard)
+        self.root.bind('<Right>', self.next_image_keyboard)
+        self.root.bind('<Left>', self.previous_image_keyboard)
 
-    def configure_optional_parameter(self):
-        fps_dialog = customtkinter.CTkInputDialog(text="Input\n"
-                                                       " fps (Optional):\n"
-                                                       "\n"
-                                                       "If you want to add a time column to the output file, "
-                                                       "enter a value of fps.",
-                                                  title="fps (Optional)")
-        self.fps = fps_dialog.get_input()
-        if self.fps != "":
-            self.fps = float(self.fps)
-        self.fps_label.configure(text=f"fps: {self.fps}")
+    def configure_optional_parameter(self, fps_config=True):
+        if fps_config:
+            fps_dialog = customtkinter.CTkInputDialog(text='Input\n'
+                                                           ' fps (Optional):\n'
+                                                           '\n'
+                                                           'If you want to add a time column to the output file, '
+                                                           'enter a value of fps.\n'
+                                                           '\n'
+                                                           'To proceed without entering values, '
+                                                           'press the Ok button.',
+                                                      title='fps (Optional)')
+            self.fps = fps_dialog.get_input()
+            if self.fps != '':
+                self.fps = float(self.fps)
+            self.fps_label.configure(text=f'fps: {self.fps}')
 
-        cm_per_px_x_dialog = customtkinter.CTkInputDialog(text="Input\n"
-                                                               "x cm/px (Optional):\n"
-                                                               "\n"
-                                                               "If you want to add physical coordinates (cm) converted "
-                                                               "from image coordinates (px) to the output file, "
-                                                               "enter a value of x-axis direction cm/px.",
-                                                          title="x cm/px (Optional)")
+        cm_per_px_x_dialog = customtkinter.CTkInputDialog(text='Input\n'
+                                                               'x cm/px (Optional):\n'
+                                                               '\n'
+                                                               'If you want to add physical coordinates (cm) converted '
+                                                               'from image coordinates (px) to the output file, '
+                                                               'enter a value of x-axis direction cm/px.\n'
+                                                               '\n'
+                                                               'To proceed without entering values, '
+                                                               'press the Ok button.',
+                                                          title='x cm/px (Optional)')
         self.cm_per_px_x = cm_per_px_x_dialog.get_input()
-        if self.cm_per_px_x != "":
+        if self.cm_per_px_x != '':
             self.cm_per_px_x = float(self.cm_per_px_x)
-        self.cm_per_px_x_label.configure(text=f"cm/px (x): {self.cm_per_px_x}")
+        self.cm_per_px_x_label.configure(text=f'cm/px (x): {self.cm_per_px_x}')
 
-        cm_per_px_y_dialog = customtkinter.CTkInputDialog(text="Input\n"
-                                                               "y cm/px (Optional):\n"
-                                                               "\n"
-                                                               "If you want to add physical coordinates (cm) converted "
-                                                               "from image coordinates (px) to the output file, "
-                                                               "enter a value of y-axis direction cm/px.",
-                                                          title="y cm/px (Optional)")
+        cm_per_px_y_dialog = customtkinter.CTkInputDialog(text='Input\n'
+                                                               'y cm/px (Optional):\n'
+                                                               '\n'
+                                                               'If you want to add physical coordinates (cm) converted '
+                                                               'from image coordinates (px) to the output file, '
+                                                               'enter a value of y-axis direction cm/px.\n'
+                                                               '\n'
+                                                               'To proceed without entering values, '
+                                                               'press the Ok button.',
+                                                          title='y cm/px (Optional)')
         self.cm_per_px_y = cm_per_px_y_dialog.get_input()
-        if self.cm_per_px_y != "":
+        if self.cm_per_px_y != '':
             self.cm_per_px_y = float(self.cm_per_px_y)
-        self.cm_per_px_y_label.configure(text=f"cm/px (y): {self.cm_per_px_y}")
+        self.cm_per_px_y_label.configure(text=f'cm/px (y): {self.cm_per_px_y}')
+
+    def get_mov(self):
+        file_type = [('Supported Files', '*.mp4 *.MP4 *.avi *.AVI')]
+        video_path = customtkinter.filedialog.askopenfilename(title='Open Video File', filetypes=file_type)
+
+        if video_path != '':
+            # Create a progress bar
+            progress_bar = customtkinter.CTkProgressBar(master=self.label_frame, orientation='horizontal',
+                                                        mode='indeterminate')
+            progress_bar.pack(side=customtkinter.RIGHT)
+            # Create a new thread for the video to frames processing
+            thread = threading.Thread(target=self.process_video2frames, args=(video_path, progress_bar))
+            thread.start()
+
+    def process_video2frames(self, video_path, progress_bar):
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return
+        video_dir_path = Path(Path(video_path).parent, Path(video_path).stem, exist_ok=True)
+        video_dir_path.mkdir(parents=True, exist_ok=True)
+        base_path = Path(video_dir_path, Path(video_path).stem)
+
+        digit = len(str(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))))
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+
+        n = 0
+        progress_bar.start()
+
+        with ThreadPoolExecutor() as executor:
+            futures = []
+            while True:
+                ret, frame = cap.read()
+                if ret:
+                    # Convert the OpenCV images to PIL images
+                    pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                    # Submit the task of writing the frame to a new thread
+                    future = executor.submit(pil_image.save, f'{base_path}_{str(n).zfill(digit)}.jpg')
+                    futures.append(future)
+                    n += 1
+                else:
+                    break
+
+            # Wait for all tasks to complete
+            for _ in as_completed(futures):
+                pass
+
+        progress_bar.stop()
+        progress_bar.destroy()
+        cap.release()
+        self.get_frames(video_dir_path, video_fps, frame_count)
+
+    def get_frames(self, video_dir_path, video_fps, frame_count):
+        image_paths = natsorted([p for p in video_dir_path.glob('**/*')
+                                 if re.search('/*\.(jpg|jpeg|png|tif|bmp)', str(p))])
+        if len(image_paths) != 0:
+            interval_dialog = customtkinter.CTkInputDialog(text='Input\n'
+                                                                'Frame Interval:\n'
+                                                                '\n'
+                                                                'Examples\n'
+                                                                '1: Load all frames (001.jpg, 002.jpg, 003.jpg, ...)\n'
+                                                                '2: Load frames every one frame (001,003,005,...)\n'
+                                                                '3: Load frames every two frames (001,004,007,...)\n'
+                                                                '\n'
+                                                                f'Loaded Video:\n'
+                                                                f'{video_fps} fps, {frame_count} frames\n'
+                                                                '\n'
+                                                                f'Result of applying interval:\n'
+                                                                f'{video_fps} / (Frame Interval) fps\n'
+                                                                f'{frame_count} / (Frame Interval) frames\n',
+                                                           title='Frame Interval')
+            self.interval = int(interval_dialog.get_input())
+            self.frame_interval_label.configure(text=f'Frame Interval: {self.interval}')
+            self.fps = video_fps / self.interval
+            self.fps_label.configure(text=f'fps: {self.fps}')
+            self.image_paths = image_paths[::self.interval]
+            self.current_image_index = 0
+            self.offset_x = 0
+            self.offset_y = 0
+            self.first_run = True
+            self.coordinates = []
+            self.pos = []
+            self.file_list = []
+            self.configure_optional_parameter(fps_config=False)
+            self.load_image()
 
     def get_dir(self):
         dir_path = customtkinter.filedialog.askdirectory(title='Open Images from Directory ( jpg, png, tif, bmp )')
@@ -242,45 +347,66 @@ class PyCorec:
                                  if not re.search('(Bkg|Sub)', str(p))
                                  and re.search('/*\.(jpg|jpeg|png|tif|bmp)', str(p))])
         if len(image_paths) != 0:
-            interval_dialog = customtkinter.CTkInputDialog(text="Input\n"
-                                                                "Frame Interval:\n"
-                                                                "\n"
-                                                                "Examples\n"
-                                                                "1: Load all frames (001.jpg, 002.jpg, 003.jpg, ...)\n"
-                                                                "2: Load frames every one frame (001,003,005,...)\n"
-                                                                "3: Load frames every two frames (001,004,007,...)\n",
-                                                           title="Frame Interval")
+            interval_dialog = customtkinter.CTkInputDialog(text='Input\n'
+                                                                'Frame Interval:\n'
+                                                                '\n'
+                                                                'Examples\n'
+                                                                '1: Load all frames (001.jpg, 002.jpg, 003.jpg, ...)\n'
+                                                                '2: Load frames every one frame (001,003,005,...)\n'
+                                                                '3: Load frames every two frames (001,004,007,...)\n',
+                                                           title='Frame Interval')
             self.interval = int(interval_dialog.get_input())
-            self.frame_interval_label.configure(text=f"Frame Interval: {self.interval}")
+            self.frame_interval_label.configure(text=f'Frame Interval: {self.interval}')
             self.image_paths = image_paths[::self.interval]
+            self.current_image_index = 0
+            self.offset_x = 0
+            self.offset_y = 0
+            self.first_run = True
+            self.coordinates = []
+            self.pos = []
+            self.file_list = []
             self.configure_optional_parameter()
             self.load_image()
 
     def get_range(self):
-        file_type = [("Supported Files", "*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif")]
-        image_paths = customtkinter.filedialog.askopenfilenames(title="Open Images by Bounded Selection",
+        file_type = [('Supported Files', '*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif')]
+        image_paths = customtkinter.filedialog.askopenfilenames(title='Open Images by Bounded Selection',
                                                                 filetypes=file_type)
         image_paths = natsorted(image_paths)
         if len(image_paths) != 0:
-            interval_dialog = customtkinter.CTkInputDialog(text="Input\n"
-                                                                "Frame Interval:\n"
-                                                                "\n"
-                                                                "Examples\n"
-                                                                "1: Load all frames (001.jpg, 002.jpg, 003.jpg, ...)\n"
-                                                                "2: Load frames every one frame (001,003,005,...)\n"
-                                                                "3: Load frames every two frames (001,004,007,...)\n",
-                                                           title="Frame Interval")
+            interval_dialog = customtkinter.CTkInputDialog(text='Input\n'
+                                                                'Frame Interval:\n'
+                                                                '\n'
+                                                                'Examples\n'
+                                                                '1: Load all frames (001.jpg, 002.jpg, 003.jpg, ...)\n'
+                                                                '2: Load frames every one frame (001,003,005,...)\n'
+                                                                '3: Load frames every two frames (001,004,007,...)\n',
+                                                           title='Frame Interval')
             self.interval = int(interval_dialog.get_input())
-            self.frame_interval_label.configure(text=f"Frame Interval: {self.interval}")
+            self.frame_interval_label.configure(text=f'Frame Interval: {self.interval}')
             self.image_paths = image_paths[::self.interval]
+            self.current_image_index = 0
+            self.offset_x = 0
+            self.offset_y = 0
+            self.first_run = True
+            self.coordinates = []
+            self.pos = []
+            self.file_list = []
             self.configure_optional_parameter()
             self.load_image()
 
     def get_files(self):
-        file_type = [("Supported Files", "*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif")]
-        image_paths = customtkinter.filedialog.askopenfilenames(title="Open Image(s) by Click", filetypes=file_type)
+        file_type = [('Supported Files', '*.jpg *.JPG *.jpeg *.png *.PNG *.bmp *.BMP *.tif')]
+        image_paths = customtkinter.filedialog.askopenfilenames(title='Open Image(s) by Click', filetypes=file_type)
         if len(image_paths) != 0:
             self.image_paths = natsorted(image_paths)
+            self.current_image_index = 0
+            self.offset_x = 0
+            self.offset_y = 0
+            self.first_run = True
+            self.coordinates = []
+            self.pos = []
+            self.file_list = []
             self.configure_optional_parameter()
             self.load_image()
 
@@ -289,10 +415,10 @@ class PyCorec:
         image = Image.open(image_path)
         self.image_file_name = Path(image_path).name
         self.image_width, self.image_height = image.size
-        self.image_size_label.configure(text=f"Image Size: {self.image_width} x {self.image_height}")
+        self.image_size_label.configure(text=f'Image Size: {self.image_width} x {self.image_height}')
         self.resized_image = self.resize_image(image, fit_image)
         self.photo_image = ImageTk.PhotoImage(self.resized_image)
-        self.canvas.delete("all")
+        self.canvas.delete('all')
         self.canvas.create_image(0 + self.offset_x, 0 + self.offset_y, anchor=customtkinter.NW,
                                  image=self.photo_image)
         self.update_labels(image_path)
@@ -319,7 +445,7 @@ class PyCorec:
 
     def zoom_image(self):
         self.zoom_level = self.zoom_spinbox.get() * 0.01
-        self.canvas.delete("all")
+        self.canvas.delete('all')
         self.load_image()
         self.draw_coordinates()
 
@@ -327,27 +453,27 @@ class PyCorec:
         fit_image = True
         self.offset_x = 0
         self.offset_y = 0
-        self.canvas.delete("all")
+        self.canvas.delete('all')
         self.load_image(fit_image)
         self.draw_coordinates()
 
     def fit_image_to_actual_size(self):
         self.zoom_level = 1.0
-        self.canvas.delete("all")
+        self.canvas.delete('all')
         self.load_image()
         self.draw_coordinates()
 
     def move_image(self, dx, dy):
         self.offset_x += dx
         self.offset_y += dy
-        self.canvas.delete("all")
+        self.canvas.delete('all')
         self.load_image()
         self.draw_coordinates()
 
-    def next_image_keyboard(self, event):
+    def next_image_keyboard(self, _):
         self.next_image()
 
-    def previous_image_keyboard(self, event):
+    def previous_image_keyboard(self, _):
         self.previous_image()
 
     def on_canvas_motion(self, event):
@@ -362,26 +488,26 @@ class PyCorec:
             self.coordinates.append((x, y))
             self.draw_coordinates()
 
-    def on_canvas_right_click(self, event):
+    def on_canvas_right_click(self, _):
         if self.image_file_name is not None:
             if len(self.coordinates) != 0:
                 del self.coordinates[-1]
                 self.draw_coordinates()
 
-    def on_canvas_wheel_click(self, event):
+    def on_canvas_wheel_click(self, _):
         if self.image_file_name is not None:
-            x = float("nan")
-            y = float("nan")
+            x = float('nan')
+            y = float('nan')
             self.coordinates.append((x, y))
             self.draw_coordinates()
 
     def draw_coordinates(self):
-        self.canvas.delete("coordinates")
+        self.canvas.delete('coordinates')
         for coord in self.coordinates:
             x, y = coord
             x = x * self.magnification + self.offset_x
             y = y * self.magnification + self.offset_y
-            self.canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill="red", outline="red", tags="coordinates")
+            self.canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill='red', outline='red', tags='coordinates')
         record_points_number = len(self.coordinates)
         self.update_records_label(record_points_number)
 
@@ -399,7 +525,7 @@ class PyCorec:
         if self.current_image_index + 1 < len(self.image_paths):
             self.record_coordinates()
             self.current_image_index = (self.current_image_index + 1) % len(self.image_paths)
-            self.canvas.delete("all")
+            self.canvas.delete('all')
             self.load_image()
             if len(self.pos) != self.current_image_index:
                 self.coordinates = self.pos[self.current_image_index]
@@ -414,269 +540,182 @@ class PyCorec:
                 self.record_coordinates()
             self.current_image_index = (self.current_image_index - 1) % len(self.image_paths)
             self.coordinates = self.pos[self.current_image_index]
-            self.canvas.delete("all")
+            self.canvas.delete('all')
             self.load_image()
             self.draw_coordinates()
 
     def update_coordinates_label(self, x, y):
-        self.coordinates_label.configure(text=f"Coordinates (px): ({x}, {y})")
+        self.coordinates_label.configure(text=f'Coordinates (px): ({x}, {y})')
 
     def update_records_label(self, record_points_number):
-        self.records_label.configure(text=f"Record Points: {record_points_number}")
+        self.records_label.configure(text=f'Record Points: {record_points_number}')
 
     def update_labels(self, image_path):
-        self.root.title(f"PyCorec {pycorec_version}      [ {self.current_image_index + 1} / {len(self.image_paths)} ]  "
-                        f"{Path(image_path).name}")
-        self.resized_image_size_label.configure(text=f"Resized Image Size: "
-                                                     f"{self.resized_image.width} x {self.resized_image.height}")
+        self.root.title(f'PyCorec {pycorec_version}      [ {self.current_image_index + 1} / {len(self.image_paths)} ]  '
+                        f'{Path(image_path).name}')
+        self.resized_image_size_label.configure(text=f'Resized Image Size: '
+                                                     f'{self.resized_image.width} x {self.resized_image.height}')
         image_magnification = (self.resized_image.width / self.image_width) * 100
-        self.image_magnification_label.configure(text=f"Image Magnification (%): {image_magnification:.1f}")
+        self.image_magnification_label.configure(text=f'Image Magnification (%): {image_magnification:.1f}')
         self.zoom_spinbox.set(image_magnification)
 
     def save_file(self):
         self.record_coordinates()
         now = datetime.datetime.now()
-        current_time = now.strftime("%Y-%m-%d-%H-%M-%S")
-        save_path = customtkinter.filedialog.asksaveasfilename(title="Save Coordinates File (Excel Book or CSV)",
-                                                               filetypes=[("Excel Book", ".xlsx"),
-                                                                          ("CSV", ".csv")],
-                                                               initialfile=f"PyCorec"
-                                                                           f"{pycorec_version}_{current_time}",
-                                                               defaultextension=".xlsx")
+        current_time = now.strftime('%Y-%m-%d-%H-%M-%S')
+        save_path = customtkinter.filedialog.asksaveasfilename(title='Save Coordinates File (Excel Book or CSV)',
+                                                               filetypes=[('Excel Book', '.xlsx'),
+                                                                          ('CSV', '.csv')],
+                                                               initialfile=f'PyCorec'
+                                                                           f'{pycorec_version}_{current_time}',
+                                                               defaultextension='.xlsx')
 
-        def write_list_1d_to_excel_column(worksheet, data_list_1d, start_row, column_number):
-            for row_num, value in enumerate(data_list_1d, start=start_row):
-                worksheet.cell(row=row_num, column=column_number, value=value)
+        # Time Series by Points
+        df = pd.DataFrame({'Filename': self.file_list})
+        df_path = pd.DataFrame({'Filepath': self.image_paths})
 
-        def write_list_2d_to_excel(worksheet, data_list_2d, start_row, start_col):
-            for y, row in enumerate(data_list_2d):
-                for x, cell_value in enumerate(row):
-                    worksheet.cell(row=start_row + y,
-                                   column=start_col + x,
-                                   value=data_list_2d[y][x])
+        if self.fps != '':
+            timestep = 1 / self.fps
+            df['Time_s'] = df.index * timestep
 
-        if ".xlsx" in save_path:
-            wb = Workbook()
-            # Time Series by Points
-            wb.create_sheet(index=0, title="Time Series by Points")
-            ws_p = wb["Time Series by Points"]
-            ws_p["A1"] = "Index"
-            ws_p["B1"] = "Filename"
-            for i in range(len(self.file_list)):
-                ws_p.cell(row=i + 2, column=1, value=i)
-                ws_p.cell(row=i + 2, column=2, value=self.file_list[i])
+        flat_pos = [[tpl for sublist in row for tpl in sublist] for row in self.pos]
+        flat_pos_row_length = max([len(row) for row in flat_pos])
+        flat_pos_np = np.array([np.pad(i, (0, flat_pos_row_length - len(i)), 'constant',
+                                       constant_values=np.nan) for i in flat_pos])
+        columns = flat_pos_np.T
 
-            if self.fps != "":
-                ws_p["C1"] = "Time_s"
-                spf = 1 / self.fps
-                timestep = self.interval * spf
-                end = 0 + (len(self.image_paths) - 1) * timestep
-                sec_list = [0 + i * timestep for i in range(int((end - 0) / timestep) + 1)]
-                for i in range(len(sec_list)):
-                    ws_p.cell(row=i + 2, column=3, value=sec_list[i])
+        for i in range(flat_pos_row_length // 2):
+            df[f'x{i + 1}_px'] = columns[i * 2]
+            df[f'y{i + 1}_px'] = columns[i * 2 + 1]
 
-            flat_pos = [[item for sublist in row for item in sublist] for row in self.pos]
-            flat_pos_row_length_check = [len(v) for v in flat_pos]
-            flat_pos_row_length = max(flat_pos_row_length_check)
-            flat_pos_row_set_length = flat_pos_row_length / 2
+        df['xm_px'] = self.image_width
+        df['ym_px'] = self.image_height
 
-            for i in range(1, int(flat_pos_row_set_length + 1)):
-                ws_p.cell(row=1, column=4 + 2 * (i - 1), value=f"x{i}_px")
-                ws_p.cell(row=1, column=5 + 2 * (i - 1), value=f"y{i}_px")
-            write_list_2d_to_excel(worksheet=ws_p, data_list_2d=flat_pos, start_row=2, start_col=4)
+        if self.cm_per_px_x != '' and self.cm_per_px_y != '':
+            for i in range(flat_pos_row_length // 2):
+                df[f'x{i + 1}_cm'] = df[f'x{i + 1}_px'] * self.cm_per_px_x
+                df[f'y{i + 1}_cm'] = df[f'y{i + 1}_px'] * self.cm_per_px_y * -1
 
-            if self.cm_per_px_x != "" and self.cm_per_px_y != "":
-                cm_pos = [[d for d in row] for row in flat_pos]
-                cm_pos = [[self.cm_per_px_x * value if column % 2 != 1 else value for column, value in enumerate(row)]
-                          for row in cm_pos]
-                cm_pos = [
-                    [-1 * self.cm_per_px_y * value if column % 2 != 0 else value for column, value in enumerate(row)]
-                    for row in cm_pos]
-                cm_pos_row_length_check = [len(v) for v in cm_pos]
-                cm_pos_row_length = max(cm_pos_row_length_check)
-                cm_pos_row_set_length = cm_pos_row_length / 2
+            df['xm_cm'] = self.image_width * self.cm_per_px_x
+            df['ym_cm'] = self.image_height * self.cm_per_px_y * -1
+            df['cm_px_x'] = self.cm_per_px_x
+            df['cm_px_y'] = self.cm_per_px_y
 
-                for i in range(1, int(cm_pos_row_set_length + 1)):
-                    ws_p.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (i - 1),
-                              value=f"x{i}_cm")
-                    ws_p.cell(row=1, column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 1 + 2 * (i - 1),
-                              value=f"y{i}_cm")
-                write_list_2d_to_excel(worksheet=ws_p, data_list_2d=cm_pos, start_row=2,
-                                       start_col=4 + 2 * (flat_pos_row_set_length + 1 - 1))
+        df['zoom'] = self.zoom_level
+        df['offset_x'] = self.offset_x
+        df['offset_y'] = self.offset_y
+        df['software'] = f'PyCorec{pycorec_version}'
+        df['datetime'] = current_time
 
-                ws_p.cell(row=1,
-                          column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1),
-                          value=f"xm_px")
-                ws_p.cell(row=2,
-                          column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1),
-                          value=self.image_width)
-                ws_p.cell(row=1,
-                          column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 1,
-                          value=f"ym_px")
-                ws_p.cell(row=2,
-                          column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 1,
-                          value=self.image_height)
-                ws_p.cell(row=1,
-                          column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 2,
-                          value=f"xm_cm")
-                ws_p.cell(row=2,
-                          column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 2,
-                          value=self.image_width * self.cm_per_px_x)
-                ws_p.cell(row=1,
-                          column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 3,
-                          value=f"ym_cm")
-                ws_p.cell(row=2,
-                          column=(4 + 2 * (flat_pos_row_set_length + 1 - 1)) + 2 * (cm_pos_row_set_length + 1 - 1) + 3,
-                          value=self.image_height * self.cm_per_px_y * -1)
+        df = pd.concat([df_path, df], axis=1)
 
-            font = Font(name="Segoe UI")
-            for column in range(1, int(ws_p.max_column) + 1):
-                for row in range(1, int(ws_p.max_row) + 1):
-                    cell = ws_p.cell(row=row, column=column)
-                    cell.font = font
+        # Spatial Distribution per Frame
+        tidy_df = pd.DataFrame()
+        tidy_pos = np.array([tpl for sublist in self.pos for tpl in sublist])
+        tidy_pos_np = np.array(tidy_pos)
+        tidy_columns = tidy_pos_np.T
+        record_point_counts = [len(row) for row in self.pos]
+        filename_col_list = []
+        point_index_col_list = []
 
-            # Spatial Distribution per Frame
-            wb.create_sheet(index=1, title="Spatial Distribution per Frame")
-            ws_f = wb["Spatial Distribution per Frame"]
-            ws_f["A1"] = "Index"
-            ws_f["B1"] = "Filename"
-            ws_f["D1"] = "PointIndex"
-            ws_f["E1"] = "x_px"
-            ws_f["F1"] = "y_px"
+        for i in range(len(self.file_list)):
+            for j in range(1, record_point_counts[i] + 1):
+                filename_col_list.append(self.file_list[i])
+                point_index_col_list.append(j)
 
-            tidy_pos = [list(tpl) for sublist in self.pos for tpl in sublist]
-            record_point_counts = [len(row) for row in self.pos]
-            index_col_list = []
-            filename_col_list = []
-            point_index_col_list = []
+        tidy_df['Filename'] = filename_col_list
+        if self.fps != '':
+            timestep = 1 / self.fps
+            end = 0 + (len(self.image_paths) - 1) * timestep
+            sec_list = [0 + i * timestep for i in range(int((end - 0) / timestep) + 1)]
+            sec_col_list = []
             for i in range(len(self.file_list)):
                 for j in range(1, record_point_counts[i] + 1):
-                    index_col_list.append(i)
-                    filename_col_list.append(self.file_list[i])
-                    point_index_col_list.append(j)
+                    sec_col_list.append(sec_list[i])
+            tidy_df['Time_s'] = sec_col_list
+        tidy_df['Point Index'] = point_index_col_list
+        tidy_df['x_px'] = tidy_columns[0]
+        tidy_df['y_px'] = tidy_columns[1]
 
-            write_list_1d_to_excel_column(worksheet=ws_f, data_list_1d=index_col_list, start_row=2, column_number=1)
-            write_list_1d_to_excel_column(worksheet=ws_f, data_list_1d=filename_col_list, start_row=2, column_number=2)
-            write_list_1d_to_excel_column(worksheet=ws_f, data_list_1d=point_index_col_list,
-                                          start_row=2, column_number=4)
-            write_list_2d_to_excel(worksheet=ws_f, data_list_2d=tidy_pos, start_row=2, start_col=5)
+        if self.cm_per_px_x != '' and self.cm_per_px_y != '':
+            tidy_df['x_cm'] = tidy_df['x_px'] * self.cm_per_px_x
+            tidy_df['y_cm'] = tidy_df['y_px'] * self.cm_per_px_y * -1
 
-            if self.fps != "":
-                ws_f["C1"] = "Time_s"
-                spf = 1 / self.fps
-                timestep = self.interval * spf
-                end = 0 + (len(self.image_paths) - 1) * timestep
-                sec_list = [0 + i * timestep for i in range(int((end - 0) / timestep) + 1)]
-                sec_col_list = []
-                for i in range(len(self.file_list)):
-                    for j in range(1, record_point_counts[i] + 1):
-                        sec_col_list.append(sec_list[i])
-                write_list_1d_to_excel_column(worksheet=ws_f, data_list_1d=sec_col_list, start_row=2, column_number=3)
+        # Save DataFrame to Excel or CSV
+        if '.xlsx' in save_path:
+            # Create a StyleFrame object
+            sf: StyleFrame = StyleFrame(df)
+            sf.apply_headers_style(Styler(font='Segoe UI', border_type={'bottom': 'medium', 'right': 'dotted',
+                                                                        'left': 'dotted'}))
 
-            if self.cm_per_px_x != "" and self.cm_per_px_y != "":
-                ws_f["G1"] = "x_cm"
-                ws_f["H1"] = "y_cm"
-                tidy_cm_pos = [list(tpl) for sublist in self.pos for tpl in sublist]
-                tidy_cm_pos = [[self.cm_per_px_x * value
-                                if column == 0 else value for column, value in enumerate(row)]
-                               for row in tidy_cm_pos]
-                tidy_cm_pos = [
-                    [-1 * self.cm_per_px_y * value if column == 1 else value for column, value in enumerate(row)]
-                    for row in tidy_cm_pos]
-                write_list_2d_to_excel(worksheet=ws_f, data_list_2d=tidy_cm_pos, start_row=2, start_col=7)
+            sf.apply_column_style(cols_to_style=sf.columns,
+                                  styler_obj=Styler(font='Segoe UI', wrap_text=False, shrink_to_fit=False,
+                                                    border_type='dotted'))
 
-                ws_f["I1"] = "xm_px"
-                ws_f.cell(row=2, column=9, value=self.image_width)
-                ws_f["J1"] = "ym_px"
-                ws_f.cell(row=2, column=10, value=self.image_height)
-                ws_f["K1"] = "xm_cm"
-                ws_f.cell(row=2, column=11, value=self.image_width * self.cm_per_px_x)
-                ws_f["L1"] = "ym_cm"
-                ws_f.cell(row=2, column=12, value=self.image_height * self.cm_per_px_y * -1)
+            sf_tidy: StyleFrame = StyleFrame(tidy_df)
+            sf_tidy.apply_headers_style(Styler(font='Segoe UI', border_type={'bottom': 'medium', 'right': 'dotted',
+                                                                             'left': 'dotted'}))
+            sf_tidy.apply_column_style(cols_to_style=sf_tidy.columns,
+                                       styler_obj=Styler(font='Segoe UI', wrap_text=False,
+                                                         shrink_to_fit=False, border_type='dotted'))
 
-            font = Font(name="Segoe UI")
-            for column in range(1, int(ws_f.max_column) + 1):
-                for row in range(1, int(ws_f.max_row) + 1):
-                    cell = ws_f.cell(row=row, column=column)
-                    cell.font = font
+            # Save DataFrame to Excel
+            with pd.ExcelWriter(save_path) as writer:
+                sf.to_excel(writer, sheet_name='Time Series by Points')
+                sf_tidy.to_excel(writer, sheet_name='Spatial Distribution per Frame')
 
-            wb.save(save_path)
+        if '.csv' in save_path:
+            df.to_csv(save_path)
 
-        if ".csv" in save_path:
-            col_names_list = ["Index", "Filename", "Time_s"]
-            index_list = []
-            sec_list = []
-            pos_cm_list = []
+    def resume_recording(self):
+        file_type = [('Supported Files', '*.xlsx *.csv')]
+        recordings_path = customtkinter.filedialog.askopenfilename(title='Open Coordinates Recording File',
+                                                                   filetypes=file_type)
+        df = pd.DataFrame()
+
+        if len(recordings_path) != 0:
+            if '.xlsx' in recordings_path:
+                df = pd.read_excel(recordings_path, sheet_name=0)
+            if '.csv' in recordings_path:
+                df = pd.read_csv(recordings_path)
+
+            self.image_paths = df['Filepath'].tolist()
+            file_list = df['Filename'].tolist()
+            self.file_list = [item for item in file_list if isinstance(item, str)]  # delete nan
+            self.pos = []
+            self.zoom_level = df['zoom'][0]
+            self.offset_x = df['offset_x'][0]
+            self.offset_y = df['offset_y'][0]
+
             for i in range(len(self.file_list)):
-                index_list.append(i)
+                pos_list = []
+                for j in range(1, 300):
+                    if f'x{j}_px' in df.columns:
+                        pos_list.append((df[f'x{j}_px'][i], df[f'y{j}_px'][i]))
+                    else:
+                        break
+                self.pos.append(pos_list)
 
-            if self.fps != "":
-                spf = 1 / self.fps
-                timestep = self.interval * spf
-                end = 0 + (len(self.image_paths) - 1) * timestep
-                sec_list = [0 + i * timestep for i in range(int((end - 0) / timestep) + 1)]
+            self.frame_interval_label.configure(text=f'Frame Interval:')
 
-            col_merge_list = list(zip_longest(index_list, self.file_list, sec_list, fillvalue=None))
-            col_merge_list = [list(row) for row in col_merge_list]
+            if 'Time_s' in df.columns:
+                self.fps = 1 / (df['Time_s'][1] - df['Time_s'][0])
+                self.fps_label.configure(text=f'fps: {self.fps}')
 
-            flat_pos = [[item for sublist in row for item in sublist] for row in self.pos]
-            flat_pos_row_length_check = [len(v) for v in flat_pos]
-            flat_pos_row_length = max(flat_pos_row_length_check)
-            flat_pos_row_set_length = flat_pos_row_length / 2
-            for i in range(int(flat_pos_row_set_length)):
-                col_names_list.append(f"x{i + 1}_px")
-                col_names_list.append(f"y{i + 1}_px")
+            if 'x1_cm' in df.columns:
+                self.cm_per_px_x = df['cm_px_x'][0]
+                self.cm_per_px_y = df['cm_px_y'][0]
+                self.cm_per_px_x_label.configure(text=f'cm/px (x): {self.cm_per_px_x}')
+                self.cm_per_px_y_label.configure(text=f'cm/px (y): {self.cm_per_px_y}')
 
-            pos_merge_list = []
-            for sublist1, sublist2 in zip(col_merge_list, flat_pos):
-                sublist1.extend(sublist2)
-                pos_merge_list.append(sublist1)
-            pos_merge_list_length = max(len(v) for v in pos_merge_list)
-
-            if self.cm_per_px_x != "" and self.cm_per_px_y != "":
-                cm_pos = [[d for d in row] for row in flat_pos]
-                cm_pos = [[self.cm_per_px_x * value if column % 2 != 1 else value for column, value in enumerate(row)]
-                          for row in cm_pos]
-                cm_pos = [
-                    [-1 * self.cm_per_px_y * value if column % 2 != 0 else value for column, value in enumerate(row)]
-                    for row in cm_pos]
-                cm_pos_row_length_check = [len(v) for v in cm_pos]
-                cm_pos_row_length = max(cm_pos_row_length_check)
-                cm_pos_row_set_length = cm_pos_row_length / 2
-
-                for i in range(int(cm_pos_row_set_length)):
-                    col_names_list.append(f"x{i + 1}_cm")
-                    col_names_list.append(f"y{i + 1}_cm")
-
-                for row in pos_merge_list:
-                    while len(row) < pos_merge_list_length:
-                        row.append("")
-
-                for row in cm_pos:
-                    while len(row) < cm_pos_row_length:
-                        row.append("")
-
-                for sublist1, sublist2 in zip(pos_merge_list, cm_pos):
-                    sublist1.extend(sublist2)
-                    pos_cm_list.append(sublist1)
-
-                col_names_list.extend([f"xm_px", f"ym_px", f"xm_cm", f"ym_cm"])
-                image_size_list = [self.image_width, self.image_height,
-                                   self.image_width * self.cm_per_px_x, self.image_height * self.cm_per_px_y * -1]
-                for i in image_size_list:
-                    pos_cm_list[0].append(i)
-
-                pos_cm_list.insert(0, col_names_list)
-
-                with open(save_path, "w", newline="") as file:
-                    writer = csv.writer(file)
-                    writer.writerows(pos_cm_list)
-
-            if self.cm_per_px_x == "":
-                pos_merge_list.insert(0, col_names_list)
-                with open(save_path, "w", newline="") as file:
-                    writer = csv.writer(file)
-                    writer.writerows(pos_merge_list)
+            self.current_image_index = len(self.file_list) - 1
+            self.canvas.delete('all')
+            self.load_image()
+            self.coordinates = self.pos[self.current_image_index]
+            if np.isnan(self.coordinates).all():
+                self.coordinates = []
+            self.draw_coordinates()
+            self.update_labels(self.image_paths[self.current_image_index])
 
 
 class FloatSpinbox(customtkinter.CTkFrame):
@@ -691,31 +730,31 @@ class FloatSpinbox(customtkinter.CTkFrame):
         self.step_size = step_size
         self.command = command
 
-        self.configure(fg_color=("gray78", "gray28"))  # set frame color
+        self.configure(fg_color=('gray78', 'gray28'))  # set frame color
 
         self.grid_columnconfigure(2, weight=0)  # buttons don't expand
         self.grid_columnconfigure(1, weight=1)  # entry expands
 
-        self.subtract_button = customtkinter.CTkButton(self, text="-", width=height - 6, height=height - 6,
+        self.subtract_button = customtkinter.CTkButton(self, text='-', width=height - 6, height=height - 6,
                                                        command=self.subtract_button_callback)
         self.subtract_button.grid(row=0, column=0, padx=(3, 0), pady=3)
 
         self.entry = customtkinter.CTkEntry(self, width=width - (2 * height), height=height - 6, border_width=0)
-        self.entry.grid(row=0, column=1, columnspan=1, padx=3, pady=3, sticky="ew")
+        self.entry.grid(row=0, column=1, columnspan=1, padx=3, pady=3, sticky='ew')
 
-        self.add_button = customtkinter.CTkButton(self, text="+", width=height - 6, height=height - 6,
+        self.add_button = customtkinter.CTkButton(self, text='+', width=height - 6, height=height - 6,
                                                   command=self.add_button_callback)
         self.add_button.grid(row=0, column=2, padx=(0, 3), pady=3)
 
         # default value
-        self.entry.insert(0, "")
+        self.entry.insert(0, '')
 
     def add_button_callback(self):
         if self.command is not None:
             self.command()
         try:
             value = float(self.entry.get()) + self.step_size
-            self.entry.delete(0, "end")
+            self.entry.delete(0, 'end')
             self.entry.insert(0, value)
         except ValueError:
             return
@@ -725,7 +764,7 @@ class FloatSpinbox(customtkinter.CTkFrame):
             self.command()
         try:
             value = float(self.entry.get()) - self.step_size
-            self.entry.delete(0, "end")
+            self.entry.delete(0, 'end')
             self.entry.insert(0, value)
         except ValueError:
             return
@@ -737,7 +776,7 @@ class FloatSpinbox(customtkinter.CTkFrame):
             return None
 
     def set(self, value: float):
-        self.entry.delete(0, "end")
+        self.entry.delete(0, 'end')
         self.entry.insert(0, str(float(value)))
 
 
@@ -749,21 +788,21 @@ class ArrowButton(customtkinter.CTkFrame):
 
         self.command = command
 
-        self.configure(fg_color="#333333")
+        self.configure(fg_color='#333333')
 
-        self.up_button = customtkinter.CTkButton(self, text="↑", height=20, width=20,
+        self.up_button = customtkinter.CTkButton(self, text='↑', height=20, width=20,
                                                  command=self.up_button_callback)
         self.up_button.grid(row=0, column=1, padx=1, pady=1)
 
-        self.down_button = customtkinter.CTkButton(self, text="↓", height=20, width=20,
+        self.down_button = customtkinter.CTkButton(self, text='↓', height=20, width=20,
                                                    command=self.down_button_callback)
         self.down_button.grid(row=2, column=1, padx=1, pady=1)
 
-        self.left_button = customtkinter.CTkButton(self, text="←", height=20, width=20,
+        self.left_button = customtkinter.CTkButton(self, text='←', height=20, width=20,
                                                    command=self.left_button_callback)
         self.left_button.grid(row=1, column=0, padx=1, pady=1)
 
-        self.down_button = customtkinter.CTkButton(self, text="→", height=20, width=20,
+        self.down_button = customtkinter.CTkButton(self, text='→', height=20, width=20,
                                                    command=self.right_button_callback)
         self.down_button.grid(row=1, column=2, padx=1, pady=1)
 
@@ -793,6 +832,6 @@ def main():
     app2.root.mainloop()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app = PyCorec()
     app.root.mainloop()
