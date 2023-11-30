@@ -16,7 +16,7 @@ from PIL import Image, ImageTk  # pip install pillow
 from screeninfo import get_monitors  # pip install screeninfo
 from styleframe import StyleFrame, Styler  # pip install styleframe
 
-pycorec_version = '2.0.7'
+pycorec_version = '2.0.8'
 
 
 class PyCorec:
@@ -127,6 +127,14 @@ class PyCorec:
         self.cm_per_px_y_label = customtkinter.CTkLabel(self.label_frame, text='cm/px (y): ')
         self.cm_per_px_y_label.pack(side=customtkinter.LEFT, padx=10)
 
+        self.previous_image_button = customtkinter.CTkButton(self.label_frame, text='◀', width=10,
+                                                             command=self.previous_image)
+        self.previous_image_button.pack(side=customtkinter.LEFT, padx=5)
+
+        self.next_image_button = customtkinter.CTkButton(self.label_frame, text='▶', width=10,
+                                                         command=self.next_image)
+        self.next_image_button.pack(side=customtkinter.LEFT, padx=5)
+
         #  buttons
         self.button_frame = customtkinter.CTkFrame(self.frame)
         self.button_frame.pack(side=customtkinter.RIGHT, fill=customtkinter.Y, padx=10, pady=10)
@@ -190,14 +198,6 @@ class PyCorec:
         self.resume_recording_button = customtkinter.CTkButton(self.button_frame, text='Resume Recording',
                                                                command=self.resume_recording)
         self.resume_recording_button.pack(fill=customtkinter.X, padx=10, pady=5)
-
-        self.blank_button = customtkinter.CTkButton(self.button_frame, text='Usage\n'
-                                                                            'Next Image : → right arrow key\n'
-                                                                            'Previous Image : ← left arrow key\n'
-                                                                            'Record Coordinates : left-click\n'
-                                                                            'Delete Coordinates : right-click',
-                                                    fg_color='transparent', hover=False)
-        self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
 
         #  canvas
         self.canvas.bind('<Button-1>', self.on_canvas_left_click)

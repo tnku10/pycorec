@@ -4,7 +4,7 @@ PyCorec
 
 | Python Coordinates Recoder for Sequence Images (PyCorec)
 
-| Version 2.0.7 (2023-11-30)
+| Version 2.0.8 (2023-11-30)
 
 | PyCorec is a python GUI application that can read images with sequential numbers in the same file name, display them in numerical order, and record the coordinate points on the image using mouse operations.
 
@@ -133,6 +133,10 @@ Save the coordinate data 💾
 
 Release
 ------------------
+| Version 2.0.8 (2023-11-30)
+
+* Add image transition button and remove usage instructions text.
+
 | Version 2.0.7 (2023-11-30)
 
 * Enable to read video and get frames.
