@@ -2,8 +2,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed  # system includ
 import datetime  # system included
 from pathlib import Path  # system included
 import threading  # system included
-from typing import Callable  # system included
-from typing import Union  # system included
 import customtkinter  # pip install customtkinter
 import cv2  # pip install opencv-python
 from natsort import natsorted  # pip install natsort
@@ -12,7 +10,7 @@ import pandas as pd  # pip install pandas
 from PIL import Image, ImageTk  # pip install pillow
 from styleframe import StyleFrame, Styler  # pip install styleframe
 
-pycorec_version = '2.0.9'
+pycorec_version = '2.1.0'
 
 
 class PyCorec:
@@ -40,6 +38,9 @@ class PyCorec:
         self.offset_x = 0
         self.offset_y = 0
         self.is_fullscreen = False
+        self.is_panning = False
+        self.pan_start_x = 0
+        self.pan_start_y = 0
 
         # create window
         self.root = customtkinter.CTk()
@@ -80,6 +81,16 @@ class PyCorec:
         self.image_index_label = customtkinter.CTkLabel(self.label_frame, text='[ 0 / 0 ]')
         self.image_index_label.pack(side=customtkinter.LEFT, padx=10)
 
+        self.previous_image_button = customtkinter.CTkButton(
+            self.label_frame, text='◀', width=10, command=self.previous_image
+        )
+        self.previous_image_button.pack(side=customtkinter.LEFT, padx=5)
+
+        self.next_image_button = customtkinter.CTkButton(
+            self.label_frame, text='▶', width=10, command=self.next_image
+        )
+        self.next_image_button.pack(side=customtkinter.LEFT, padx=5)
+
         self.frame_interval_label = customtkinter.CTkLabel(self.label_frame, text='Frame Interval: 1')
         self.frame_interval_label.pack(side=customtkinter.LEFT, padx=10)
 
@@ -101,113 +112,170 @@ class PyCorec:
         self.cm_per_px_y_label = customtkinter.CTkLabel(self.label_frame, text='cm/px (y): ')
         self.cm_per_px_y_label.pack(side=customtkinter.LEFT, padx=10)
 
-        self.previous_image_button = customtkinter.CTkButton(
-            self.label_frame, text='◀', width=10, command=self.previous_image
-        )
-        self.previous_image_button.pack(side=customtkinter.LEFT, padx=5)
-
-        self.next_image_button = customtkinter.CTkButton(
-            self.label_frame, text='▶', width=10, command=self.next_image
-        )
-        self.next_image_button.pack(side=customtkinter.LEFT, padx=5)
-
         #  buttons
         self.button_frame = customtkinter.CTkFrame(self.frame)
         self.button_frame.pack(side=customtkinter.RIGHT, fill=customtkinter.Y, padx=10, pady=10)
 
-        self.blank_button = customtkinter.CTkButton(
-            self.button_frame, text='Open Images by', fg_color='transparent', hover=False
+        # ====== Section: Input / Open Images ======
+        self.section_open_label = customtkinter.CTkLabel(
+            self.button_frame,
+            text='Open Images',
+            font=customtkinter.CTkFont(size=14, weight='bold')
         )
-        self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
+        self.section_open_label.pack(fill=customtkinter.X, padx=10, pady=(0, 5))
 
         self.open_image_mov_button = customtkinter.CTkButton(
-            self.button_frame, text='Video Capture', command=self.get_mov
+            self.button_frame,
+            text='🎬  Video Capture',
+            fg_color='#1f538d',
+            hover_color='#17406a',
+            command=self.get_mov
         )
-        self.open_image_mov_button.pack(fill=customtkinter.X, padx=10, pady=10)
+        self.open_image_mov_button.pack(fill=customtkinter.X, padx=10, pady=3)
 
         self.open_image_dir_button = customtkinter.CTkButton(
-            self.button_frame, text='Directory Selection', command=self.get_dir
+            self.button_frame,
+            text='📁  Directory Selection',
+            fg_color='#1f538d',
+            hover_color='#17406a',
+            command=self.get_dir
         )
-        self.open_image_dir_button.pack(fill=customtkinter.X, padx=10, pady=10)
+        self.open_image_dir_button.pack(fill=customtkinter.X, padx=10, pady=3)
 
         self.open_image_range_button = customtkinter.CTkButton(
-            self.button_frame, text='Bounded Selection', command=self.get_range
+            self.button_frame,
+            text='📑  Bounded Selection',
+            fg_color='#1f538d',
+            hover_color='#17406a',
+            command=self.get_range
         )
-        self.open_image_range_button.pack(fill=customtkinter.X, padx=10, pady=10)
+        self.open_image_range_button.pack(fill=customtkinter.X, padx=10, pady=3)
 
         self.open_image_click_button = customtkinter.CTkButton(
-            self.button_frame, text='Click Selection', command=self.get_files
+            self.button_frame,
+            text='🖱  Click Selection',
+            fg_color='#1f538d',
+            hover_color='#17406a',
+            command=self.get_files
         )
-        self.open_image_click_button.pack(fill=customtkinter.X, padx=10, pady=10)
+        self.open_image_click_button.pack(fill=customtkinter.X, padx=10, pady=(3, 10))
 
-        self.blank_button = customtkinter.CTkButton(
-            self.button_frame, text='', fg_color='transparent', hover=False
+        # ====== Section: View / Navigation ======
+        self.section_view_label = customtkinter.CTkLabel(
+            self.button_frame,
+            text='View / Navigation',
+            font=customtkinter.CTkFont(size=14, weight='bold')
         )
-        self.blank_button.pack(fill=customtkinter.X, padx=10, pady=5)
+        self.section_view_label.pack(fill=customtkinter.X, padx=10, pady=(0, 5))
 
-        self.blank_button = customtkinter.CTkButton(
-            self.button_frame, text='Move Image', fg_color='transparent', hover=False
+        self.view_help_frame = customtkinter.CTkFrame(
+            self.button_frame,
+            fg_color=('gray85', 'gray18'),
+            corner_radius=8
         )
-        self.blank_button.pack(fill=customtkinter.X, padx=10, pady=0)
+        self.view_help_frame.pack(fill=customtkinter.X, padx=10, pady=(0, 8))
+        self.view_help_frame.grid_columnconfigure(0, weight=0)
+        self.view_help_frame.grid_columnconfigure(1, weight=1)
 
-        self.move_button = ArrowButton(self.button_frame, command=self.move_image)
-        self.move_button.pack(fill=customtkinter.X, padx=70, pady=10)
+        help_items = [
+            ("  Left click", ": add point"),
+            ("  Right click", ": delete last point"),
+            ("  Shift + Left", ": add NaN point"),
+            ("  Wheel", ": zoom in / out"),
+            ("  Space + Drag", ": pan image"),
+            ("  ← / →", ": prev / next frame"),
+        ]
 
-        self.blank_button = customtkinter.CTkButton(
-            self.button_frame, text='Image Magnification (%)', fg_color='transparent', hover=False
-        )
-        self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
+        for row, (left, right) in enumerate(help_items):
+            left_label = customtkinter.CTkLabel(
+                self.view_help_frame,
+                text=left,
+                anchor="w",
+                font=customtkinter.CTkFont(size=11)
+            )
+            left_label.grid(row=row, column=0, sticky="w", padx=6, pady=1)
 
-        self.zoom_spinbox = FloatSpinbox(self.button_frame, width=150, step_size=3)
-        self.zoom_spinbox.pack(fill=customtkinter.X, padx=10, pady=0)
-
-        self.zoom_in_button = customtkinter.CTkButton(
-            self.button_frame, text='Apply', command=self.zoom_image
-        )
-        self.zoom_in_button.pack(fill=customtkinter.X, padx=10, pady=5)
+            right_label = customtkinter.CTkLabel(
+                self.view_help_frame,
+                text=right,
+                anchor="w",
+                font=customtkinter.CTkFont(size=11)
+            )
+            right_label.grid(row=row, column=1, sticky="w", padx=4, pady=1)
 
         self.fit_image_to_window_button = customtkinter.CTkButton(
-            self.button_frame, text='Reset to Window Size', command=self.fit_image_to_window
+            self.button_frame,
+            text='Fit to Window',
+            fg_color='transparent',
+            border_width=1,
+            border_color=('gray60', 'gray40'),
+            hover_color=('gray80', 'gray30'),
+            command=self.fit_image_to_window
         )
-        self.fit_image_to_window_button.pack(fill=customtkinter.X, padx=10, pady=10)
+        self.fit_image_to_window_button.pack(fill=customtkinter.X, padx=10, pady=3)
 
         self.fit_image_to_actual_size_button = customtkinter.CTkButton(
-            self.button_frame, text='Actual Size', command=self.fit_image_to_actual_size
+            self.button_frame,
+            text='Actual Size (100%)',
+            fg_color='transparent',
+            border_width=1,
+            border_color=('gray60', 'gray40'),
+            hover_color=('gray80', 'gray30'),
+            command=self.fit_image_to_actual_size
         )
-        self.fit_image_to_actual_size_button.pack(fill=customtkinter.X, padx=10, pady=5)
+        self.fit_image_to_actual_size_button.pack(fill=customtkinter.X, padx=10, pady=3)
 
         self.fullscreen_button = customtkinter.CTkButton(
             self.button_frame,
-            text='Toggle Fullscreen (F11)',
+            text='⛶  Toggle Fullscreen (F11)',
+            fg_color=('gray60', 'gray40'),
+            hover_color=('gray80', 'gray30'),
             command=self.toggle_fullscreen
         )
-        self.fullscreen_button.pack(fill=customtkinter.X, padx=10, pady=5)
+        self.fullscreen_button.pack(fill=customtkinter.X, padx=10, pady=(5, 10))
 
-        self.blank_button = customtkinter.CTkButton(
-            self.button_frame, text='', fg_color='transparent', hover=False
+        # ====== Section: Export / Resume ======
+        self.section_export_label = customtkinter.CTkLabel(
+            self.button_frame,
+            text='Export / Resume',
+            font=customtkinter.CTkFont(size=14, weight='bold')
         )
-        self.blank_button.pack(fill=customtkinter.X, padx=10, pady=10)
+        self.section_export_label.pack(fill=customtkinter.X, padx=10, pady=(0, 5))
 
         self.save_file_button = customtkinter.CTkButton(
-            self.button_frame, text='Save as...', command=self.save_file
+            self.button_frame,
+            text='💾  Save as...',
+            fg_color='#2e7d32',
+            hover_color='#245f27',
+            command=self.save_file
         )
         self.save_file_button.pack(fill=customtkinter.X, padx=10, pady=5)
 
         self.resume_recording_button = customtkinter.CTkButton(
-            self.button_frame, text='Resume Recording', command=self.resume_recording
+            self.button_frame,
+            text='⏯  Resume Recording',
+            fg_color=('gray60', 'gray40'),
+            hover_color=('gray80', 'gray30'),
+            command=self.resume_recording
         )
         self.resume_recording_button.pack(fill=customtkinter.X, padx=10, pady=5)
 
         #  canvas
         self.canvas.bind('<Button-1>', self.on_canvas_left_click)
+        self.canvas.bind('<Button-2>', self.on_canvas_right_click)
         self.canvas.bind('<Button-3>', self.on_canvas_right_click)
-        self.canvas.bind('<Button-2>', self.on_canvas_wheel_click)
+        self.canvas.bind('<Shift-Button-1>', self.on_canvas_shift_click)
         self.canvas.bind('<Motion>', self.on_canvas_motion)
+        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
+        self.canvas.bind("<MouseWheel>", self.on_mousewheel_zoom)
+        self.canvas.bind("<Button-4>", self.on_mousewheel_zoom)
+        self.canvas.bind("<Button-5>", self.on_mousewheel_zoom)
         self.canvas.configure(cursor='crosshair')
 
+        self.root.bind("<KeyPress-space>", self._start_space_pan)
+        self.root.bind("<KeyRelease-space>", self._end_space_pan)
         self.root.bind('<Right>', self.next_image_keyboard)
         self.root.bind('<Left>', self.previous_image_keyboard)
-
         self.root.bind('<F11>', lambda e: self.toggle_fullscreen())
 
     def configure_optional_parameter(self, fps_config=True):
@@ -482,12 +550,36 @@ class PyCorec:
         self.magnification = self.resized_image_width / self.image_width
         return resized_image
 
-    def zoom_image(self):
-        zoom_value = self.zoom_spinbox.get()
-        if zoom_value is None:
+    def on_mousewheel_zoom(self, event):
+        if self.image_file_name is None:
             return
-        self.zoom_level = zoom_value * 0.01
-        self.canvas.delete('all')
+        direction = 0
+        # Windows / macOS (MouseWheel)
+        if hasattr(event, "delta") and event.delta != 0:
+            direction = 1 if event.delta > 0 else -1
+        # Linux (Button-4 / Button-5)
+        elif hasattr(event, "num"):
+            if event.num == 4:
+                direction = 1
+            elif event.num == 5:
+                direction = -1
+        if direction == 0:
+            return
+        zoom_factor = 1.1 if direction > 0 else 0.9
+        old_zoom = self.zoom_level if self.zoom_level > 0 else 1.0
+        old_mag = self.magnification if self.magnification > 0 else old_zoom
+        min_zoom = 0.1
+        max_zoom = 10.0
+        new_zoom = old_zoom * zoom_factor
+        new_zoom = max(min_zoom, min(max_zoom, new_zoom))
+        img_x = (event.x - self.offset_x) / old_mag
+        img_y = (event.y - self.offset_y) / old_mag
+        self.zoom_level = new_zoom
+        # new_width = image_width * self.zoom_level → magnification ≒ self.zoom_level
+        new_mag = self.zoom_level
+        self.offset_x = event.x - img_x * new_mag
+        self.offset_y = event.y - img_y * new_mag
+        self.canvas.delete("all")
         self.load_image()
         self.draw_coordinates()
 
@@ -530,13 +622,18 @@ class PyCorec:
         self.update_coordinates_label(round(x), round(y))
 
     def on_canvas_left_click(self, event):
-        if self.image_file_name is not None:
-            x = (event.x - self.offset_x) / self.magnification
-            y = (event.y - self.offset_y) / self.magnification
-            x_int = int(round(x))
-            y_int = int(round(y))
-            self.coordinates.append((x_int, y_int))
-            self.draw_coordinates()
+        if self.image_file_name is None:
+            return
+        if self.is_panning:
+            self.pan_start_x = event.x
+            self.pan_start_y = event.y
+            return
+        x = (event.x - self.offset_x) / self.magnification
+        y = (event.y - self.offset_y) / self.magnification
+        x_int = int(round(x))
+        y_int = int(round(y))
+        self.coordinates.append((x_int, y_int))
+        self.draw_coordinates()
 
     def on_canvas_right_click(self, _):
         if self.image_file_name is not None:
@@ -544,12 +641,39 @@ class PyCorec:
                 del self.coordinates[-1]
                 self.draw_coordinates()
 
-    def on_canvas_wheel_click(self, _):
+    def on_canvas_shift_click(self, _):
         if self.image_file_name is not None:
             x = float('nan')
             y = float('nan')
             self.coordinates.append((x, y))
             self.draw_coordinates()
+
+    def on_canvas_drag(self, event):
+        if not self.is_panning:
+            return
+        if self.image_file_name is None:
+            return
+
+        dx = event.x - self.pan_start_x
+        dy = event.y - self.pan_start_y
+
+        self.pan_start_x = event.x
+        self.pan_start_y = event.y
+
+        self.offset_x += dx
+        self.offset_y += dy
+
+        self.canvas.delete("all")
+        self.load_image()
+        self.draw_coordinates()
+
+    def _start_space_pan(self, _event):
+        self.is_panning = True
+        self.canvas.configure(cursor="fleur")
+
+    def _end_space_pan(self, _event):
+        self.is_panning = False
+        self.canvas.configure(cursor="crosshair")
 
     def draw_coordinates(self):
         self.canvas.delete('coordinates')
@@ -622,7 +746,6 @@ class PyCorec:
         self.image_magnification_label.configure(
             text=f'Image Magnification (%): {image_magnification:.1f}'
         )
-        self.zoom_spinbox.set(round(image_magnification, 1))
 
     def save_file(self):
         self.record_coordinates()
@@ -804,128 +927,6 @@ class PyCorec:
                 pass
             self.draw_coordinates()
             self.update_labels(self.image_paths[self.current_image_index])
-
-
-class FloatSpinbox(customtkinter.CTkFrame):
-    def __init__(self, *args,
-                 width: int = 100,
-                 height: int = 32,
-                 step_size: Union[int, float] = 1,
-                 command: Callable = None,
-                 **kwargs):
-        super().__init__(*args, width=width, height=height, **kwargs)
-
-        self.step_size = step_size
-        self.command = command
-
-        self.configure(fg_color=('gray78', 'gray28'))
-
-        self.grid_columnconfigure(2, weight=0)
-        self.grid_columnconfigure(1, weight=1)
-
-        self.subtract_button = customtkinter.CTkButton(
-            self, text='-', width=height - 6, height=height - 6,
-            command=self.subtract_button_callback
-        )
-        self.subtract_button.grid(row=0, column=0, padx=(3, 0), pady=3)
-
-        self.entry = customtkinter.CTkEntry(
-            self, width=width - (2 * height), height=height - 6, border_width=0
-        )
-        self.entry.grid(row=0, column=1, columnspan=1, padx=3, pady=3, sticky='ew')
-
-        self.add_button = customtkinter.CTkButton(
-            self, text='+', width=height - 6, height=height - 6,
-            command=self.add_button_callback
-        )
-        self.add_button.grid(row=0, column=2, padx=(0, 3), pady=3)
-
-        self.entry.insert(0, '')
-
-    def add_button_callback(self):
-        if self.command is not None:
-            self.command()
-        try:
-            value = float(self.entry.get()) + self.step_size
-            self.entry.delete(0, 'end')
-            self.entry.insert(0, value)
-        except ValueError:
-            return
-
-    def subtract_button_callback(self):
-        if self.command is not None:
-            self.command()
-        try:
-            value = float(self.entry.get()) - self.step_size
-            self.entry.delete(0, 'end')
-            self.entry.insert(0, value)
-        except ValueError:
-            return
-
-    def get(self) -> Union[float, None]:
-        try:
-            return float(self.entry.get())
-        except ValueError:
-            return None
-
-    def set(self, value: float):
-        self.entry.delete(0, 'end')
-        self.entry.insert(0, str(float(value)))
-
-
-class ArrowButton(customtkinter.CTkFrame):
-    def __init__(self, *args,
-                 command: Callable = None,
-                 **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.command = command
-
-        self.configure(fg_color='#333333')
-
-        self.up_button = customtkinter.CTkButton(
-            self, text='↑', height=20, width=20,
-            command=self.up_button_callback
-        )
-        self.up_button.grid(row=0, column=1, padx=1, pady=1)
-
-        self.down_button = customtkinter.CTkButton(
-            self, text='↓', height=20, width=20,
-            command=self.down_button_callback
-        )
-        self.down_button.grid(row=2, column=1, padx=1, pady=1)
-
-        self.left_button = customtkinter.CTkButton(
-            self, text='←', height=20, width=20,
-            command=self.left_button_callback
-        )
-        self.left_button.grid(row=1, column=0, padx=1, pady=1)
-
-        self.right_button = customtkinter.CTkButton(
-            self, text='→', height=20, width=20,
-            command=self.right_button_callback
-        )
-        self.right_button.grid(row=1, column=2, padx=1, pady=1)
-
-    def up_button_callback(self):
-        if self.command is not None:
-            self.command(dx=0, dy=-10)
-            return
-
-    def down_button_callback(self):
-        if self.command is not None:
-            self.command(dx=0, dy=10)
-            return
-
-    def left_button_callback(self):
-        if self.command is not None:
-            self.command(dx=-10, dy=0)
-            return
-
-    def right_button_callback(self):
-        if self.command is not None:
-            self.command(dx=10, dy=0)
-            return
 
 
 def main():
