@@ -77,10 +77,8 @@ class PyCorec:
         self.records_label = customtkinter.CTkLabel(self.label_frame, text='Record Points: 0')
         self.records_label.pack(side=customtkinter.LEFT, padx=10)
 
-        # ★ 画像インデックス＋ファイル名表示用ラベル（タイトルバーと同じ情報）
         self.image_index_label = customtkinter.CTkLabel(self.label_frame, text='[ 0 / 0 ]')
         self.image_index_label.pack(side=customtkinter.LEFT, padx=10)
-        # ★ ここまで追加
 
         self.frame_interval_label = customtkinter.CTkLabel(self.label_frame, text='Frame Interval: 1')
         self.frame_interval_label.pack(side=customtkinter.LEFT, padx=10)
