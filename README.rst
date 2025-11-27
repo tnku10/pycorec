@@ -138,7 +138,7 @@ Record the coordinates 🖱️
    :alt: record
 
 Save the coordinate data 💾
-""""""""""""""""""""""""""
+"""""""""""""""""""""""""""
 * When recording is finished with the last image, press → again to open the file save screen.
 * Or press "Save as..." in the lower right corner to save the data up to that point.
 * To interrupt coordinate recording, press "Save as..." to output the coordinate recording file, and when resuming, press "Resume Recording" to read the file you have just output.
