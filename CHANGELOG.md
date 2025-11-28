@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.1.2] - 2025-11-28
+### Fixed
+-adjust dependencies for Python 3.13.9
+
 ## [2.1.1] - 2025-11-28
 ### Fixed
 - Picture drawing smoothing issue

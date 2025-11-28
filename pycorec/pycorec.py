@@ -10,7 +10,7 @@ import pandas as pd  # pip install pandas
 from PIL import Image, ImageTk  # pip install pillow
 from styleframe import StyleFrame, Styler  # pip install styleframe
 
-pycorec_version = '2.1.0'
+pycorec_version = '2.1.2'
 
 
 class PyCorec:
