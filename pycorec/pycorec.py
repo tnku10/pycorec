@@ -41,6 +41,7 @@ class PyCorec:
         self.is_panning = False
         self.pan_start_x = 0
         self.pan_start_y = 0
+        self.canvas_image_id = None
 
         # create window
         self.root = customtkinter.CTk()
@@ -62,7 +63,7 @@ class PyCorec:
         self.image_frame = customtkinter.CTkFrame(self.frame)
         self.image_frame.pack(side=customtkinter.LEFT, fill=customtkinter.BOTH, expand=True)
 
-        self.canvas = customtkinter.CTkCanvas(self.image_frame, bg='white')
+        self.canvas = customtkinter.CTkCanvas(self.image_frame, bg='black')
         self.canvas.pack(fill=customtkinter.BOTH, expand=True)
 
         self.bottom_frame = customtkinter.CTkFrame(self.root)
@@ -513,14 +514,22 @@ class PyCorec:
         self.image_file_name = Path(image_path).name
         self.image_width, self.image_height = image.size
         self.image_size_label.configure(text=f'Image Size: {self.image_width} x {self.image_height}')
+
         self.resized_image = self.resize_image(image, fit_image)
         self.photo_image = ImageTk.PhotoImage(self.resized_image)
-        self.canvas.delete('all')
-        self.canvas.create_image(
-            0 + self.offset_x, 0 + self.offset_y,
-            anchor=customtkinter.NW,
-            image=self.photo_image
-        )
+
+        if self.canvas_image_id is None:
+            self.canvas_image_id = self.canvas.create_image(
+                self.offset_x,
+                self.offset_y,
+                anchor=customtkinter.NW,
+                image=self.photo_image,
+                tags=("base_image",)
+            )
+        else:
+            self.canvas.itemconfig(self.canvas_image_id, image=self.photo_image)
+            self.canvas.coords(self.canvas_image_id, self.offset_x, self.offset_y)
+
         self.update_labels(image_path)
 
     def resize_image(self, image, fit_image=False):
@@ -544,7 +553,7 @@ class PyCorec:
         new_height = int(image_height * self.zoom_level)
         if new_width <= 0 or new_height <= 0:
             return image
-        resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+        resized_image = image.resize((new_width, new_height), Image.BILINEAR)
         self.resized_image_width = resized_image.width
         self.resized_image_height = resized_image.height
         self.magnification = self.resized_image_width / self.image_width
@@ -575,11 +584,9 @@ class PyCorec:
         img_x = (event.x - self.offset_x) / old_mag
         img_y = (event.y - self.offset_y) / old_mag
         self.zoom_level = new_zoom
-        # new_width = image_width * self.zoom_level → magnification ≒ self.zoom_level
-        new_mag = self.zoom_level
+        new_mag = self.zoom_level  # ≒ magnification
         self.offset_x = event.x - img_x * new_mag
         self.offset_y = event.y - img_y * new_mag
-        self.canvas.delete("all")
         self.load_image()
         self.draw_coordinates()
 
@@ -587,20 +594,17 @@ class PyCorec:
         fit_image = True
         self.offset_x = 0
         self.offset_y = 0
-        self.canvas.delete('all')
         self.load_image(fit_image)
         self.draw_coordinates()
 
     def fit_image_to_actual_size(self):
         self.zoom_level = 1.0
-        self.canvas.delete('all')
         self.load_image()
         self.draw_coordinates()
 
     def move_image(self, dx, dy):
         self.offset_x += dx
         self.offset_y += dy
-        self.canvas.delete('all')
         self.load_image()
         self.draw_coordinates()
 
@@ -653,17 +657,12 @@ class PyCorec:
             return
         if self.image_file_name is None:
             return
-
         dx = event.x - self.pan_start_x
         dy = event.y - self.pan_start_y
-
         self.pan_start_x = event.x
         self.pan_start_y = event.y
-
         self.offset_x += dx
         self.offset_y += dy
-
-        self.canvas.delete("all")
         self.load_image()
         self.draw_coordinates()
 
@@ -701,7 +700,6 @@ class PyCorec:
         if self.current_image_index + 1 < len(self.image_paths):
             self.record_coordinates()
             self.current_image_index = (self.current_image_index + 1) % len(self.image_paths)
-            self.canvas.delete('all')
             self.load_image()
             if len(self.pos) != self.current_image_index:
                 self.coordinates = self.pos[self.current_image_index]
@@ -716,7 +714,6 @@ class PyCorec:
                 self.record_coordinates()
             self.current_image_index = (self.current_image_index - 1) % len(self.image_paths)
             self.coordinates = self.pos[self.current_image_index]
-            self.canvas.delete('all')
             self.load_image()
             self.draw_coordinates()
 

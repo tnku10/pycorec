@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2025-11-28
+### Fixed
+- Picture drawing smoothing issue
+
 ## [2.1.0] - 2025-11-28
 ### Added
 - Mouse-wheel zooming

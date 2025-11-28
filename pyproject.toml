@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycorec"
-version = "2.1.0"
+version = "2.1.1"
 description = "Interactive GUI tool to record clicked pixel coordinates on images"
 readme = { file = "README.rst", content-type = "text/x-rst" }
 requires-python = ">=3.11"
